@@ -27,3 +27,12 @@ func IsNetworkAllocated(network *v1alpha1.Network) bool {
 	}
 	return false
 }
+
+func IsPublicIPAllocated(ip *v1alpha1.PublicIP) bool {
+	for _, condition := range ip.Status.Conditions {
+		if condition.Type == v1alpha1.PublicIPAllocated {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}

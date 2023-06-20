@@ -23,6 +23,7 @@ import (
 	"github.com/onmetal/controller-utils/clientutils"
 	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	apinetletv1alpha1 "github.com/onmetal/onmetal-api-net/apinetlet/api/v1alpha1"
+	"github.com/onmetal/onmetal-api-net/apiutils"
 	commonv1alpha1 "github.com/onmetal/onmetal-api/api/common/v1alpha1"
 	networkingv1alpha1 "github.com/onmetal/onmetal-api/api/networking/v1alpha1"
 	"github.com/onmetal/onmetal-api/utils/predicates"
@@ -30,10 +31,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
@@ -198,7 +198,7 @@ func (r *VirtualIPReconciler) applyPublicIP(ctx context.Context, log logr.Logger
 	}
 	log.V(1).Info("Applied apinet public ip")
 
-	if !apiNetPublicIP.IsAllocated() {
+	if !apiutils.IsPublicIPAllocated(apiNetPublicIP) {
 		return netip.Addr{}, nil
 	}
 	ip := apiNetPublicIP.Spec.IP
@@ -223,7 +223,7 @@ func (r *VirtualIPReconciler) patchStatusUnallocated(ctx context.Context, virtua
 	return nil
 }
 
-func (r *VirtualIPReconciler) SetupWithManager(mgr ctrl.Manager, apiNetCluster cluster.Cluster) error {
+func (r *VirtualIPReconciler) SetupWithManager(mgr ctrl.Manager, apiNetCache cache.Cache) error {
 	log := ctrl.Log.WithName("virtualip").WithName("setup")
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -235,28 +235,11 @@ func (r *VirtualIPReconciler) SetupWithManager(mgr ctrl.Manager, apiNetCluster c
 			),
 		).
 		WatchesRawSource(
-			source.Kind(apiNetCluster.GetCache(), &onmetalapinetv1alpha1.PublicIP{}),
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-				apiNetPublicIP := obj.(*onmetalapinetv1alpha1.PublicIP)
-
-				if apiNetPublicIP.Namespace != r.APINetNamespace {
-					return nil
-				}
-
-				namespace, ok := apiNetPublicIP.Labels[apinetletv1alpha1.VirtualIPNamespaceLabel]
-				if !ok {
-					return nil
-				}
-
-				name, ok := apiNetPublicIP.Labels[apinetletv1alpha1.VirtualIPNameLabel]
-				if !ok {
-					return nil
-				}
-
-				return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: namespace, Name: name}}}
-			}),
-			builder.WithPredicates(
-				getApiNetPublicIPAllocationChangedPredicate(),
+			source.Kind(apiNetCache, &onmetalapinetv1alpha1.PublicIP{}),
+			enqueueByAPINetObjectName(r.Client,
+				&networkingv1alpha1.VirtualIPList{},
+				withFilters(notExternallyManagedFilter()),
+				matchingLabelSelector{Selector: watchLabelSelector(r.WatchFilterValue)},
 			),
 		).
 		Complete(r)

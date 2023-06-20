@@ -4,30 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.12.0
-  name: networks.apinet.api.onmetal.de
+  name: natgatewayautoscalers.apinet.api.onmetal.de
 spec:
   group: apinet.api.onmetal.de
   names:
-    kind: Network
-    listKind: NetworkList
-    plural: networks
-    singular: network
+    kind: NATGatewayAutoscaler
+    listKind: NATGatewayAutoscalerList
+    plural: natgatewayautoscalers
+    singular: natgatewayautoscaler
   scope: Namespaced
   versions:
-  - additionalPrinterColumns:
-    - jsonPath: .spec.vni
-      name: VNI
-      type: string
-    - jsonPath: .status.conditions[?(@.type == "Allocated")].reason
-      name: State
-      type: string
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
-    name: v1alpha1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Network is the schema for the networks API.
+        description: NATGatewayAutoscaler is the schema for the natgatewayautoscalers
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -43,33 +34,29 @@ spec:
             type: object
           spec:
             properties:
-              vni:
-                description: VNI is the requested network vni. Pointer to distinguish
-                  between explicitly set and unset.
+              maxPublicIPs:
+                description: MaxPublicIPs is the maximum number of public IPs to allocate
+                  for a NAT Gateway.
                 format: int32
-                maximum: 16777215
-                minimum: 0
                 type: integer
+              minPublicIPs:
+                description: MinPublicIPs is the minimum number of public IPs to allocate
+                  for a NAT Gateway.
+                format: int32
+                type: integer
+              natGatewayRef:
+                description: NATGatewayRef points to the target NATGateway to scale.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+            required:
+            - natGatewayRef
             type: object
           status:
-            properties:
-              conditions:
-                description: Conditions are the conditions of a network.
-                items:
-                  properties:
-                    message:
-                      type: string
-                    reason:
-                      type: string
-                    status:
-                      type: string
-                    type:
-                      type: string
-                  required:
-                  - status
-                  - type
-                  type: object
-                type: array
             type: object
         type: object
     served: true

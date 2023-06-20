@@ -1,0 +1,154 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.12.0
+  name: networkinterfaces.apinet.api.onmetal.de
+spec:
+  group: apinet.api.onmetal.de
+  names:
+    kind: NetworkInterface
+    listKind: NetworkInterfaceList
+    plural: networkinterfaces
+    singular: networkinterface
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.partitionName
+      name: Partition
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NetworkInterface is the schema for the networkinterfaces API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              ipFamilies:
+                description: IPFamilies are the IP families the network interface
+                  has.
+                items:
+                  description: IPFamily represents the IP Family (IPv4 or IPv6). This
+                    type is used to express the family of an IP expressed by a type
+                    (e.g. service.spec.ipFamilies).
+                  type: string
+                type: array
+              ips:
+                description: IPs specifies the IPs the for the network interface.
+                items:
+                  description: NetworkInterfaceIP specifies how to allocate an IP
+                    for a network interface.
+                  properties:
+                    ip:
+                      description: IP specifies a literal IP for the network interface.
+                      type: string
+                  type: object
+                type: array
+              networkRef:
+                description: NetworkRef references the network that the network interface
+                  is part of.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              partitionRef:
+                description: PartitionRef references the partition hosting the network
+                  interface.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              prefixes:
+                description: Prefixes specifies the additional IP prefixes for the
+                  network interface.
+                items:
+                  properties:
+                    prefix:
+                      description: IPPrefix represents a network prefix.
+                      type: object
+                  type: object
+                type: array
+              publicIPRefs:
+                description: PublicIPRefs are the public IPs for the network interface.
+                items:
+                  properties:
+                    ipFamily:
+                      description: IPFamily is the IP family of the public IP.
+                      type: string
+                    name:
+                      description: Name is the name of the public IP.
+                      type: string
+                  required:
+                  - ipFamily
+                  - name
+                  type: object
+                type: array
+            required:
+            - ipFamilies
+            - ips
+            - networkRef
+            - partitionRef
+            type: object
+          status:
+            properties:
+              externalIPs:
+                description: ExternalIPs specifies the currently allocated external
+                  IPs.
+                items:
+                  properties:
+                    ip:
+                      type: string
+                    natIP:
+                      description: NATIP is a NATed IP.
+                      properties:
+                        endPort:
+                          description: EndPort is the last port to use.
+                          format: int32
+                          type: integer
+                        ip:
+                          description: IP is the NATed IP to use.
+                          type: string
+                        port:
+                          description: Port is the first port to use.
+                          format: int32
+                          type: integer
+                      required:
+                      - endPort
+                      - ip
+                      - port
+                      type: object
+                  type: object
+                type: array
+              ips:
+                description: IPs reports the current IPs of the network interface.
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

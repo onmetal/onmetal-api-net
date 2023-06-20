@@ -1,0 +1,119 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.12.0
+  name: networkinterfaceconfigs.apinet.api.onmetal.de
+spec:
+  group: apinet.api.onmetal.de
+  names:
+    kind: NetworkInterfaceConfig
+    listKind: NetworkInterfaceConfigList
+    plural: networkinterfaceconfigs
+    singular: networkinterfaceconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          externalIPs:
+            items:
+              properties:
+                ipFamily:
+                  description: IPFamily represents the IP Family (IPv4 or IPv6). This
+                    type is used to express the family of an IP expressed by a type
+                    (e.g. service.spec.ipFamilies).
+                  type: string
+                natIP:
+                  description: NATIP is a NATed IP.
+                  properties:
+                    endPort:
+                      description: EndPort is the last port to use.
+                      format: int32
+                      type: integer
+                    ip:
+                      description: IP is the NATed IP to use.
+                      type: string
+                    port:
+                      description: Port is the first port to use.
+                      format: int32
+                      type: integer
+                  required:
+                  - endPort
+                  - ip
+                  - port
+                  type: object
+                publicIP:
+                  type: string
+                sourceRef:
+                  description: SourceRef references a source providing a virtual or
+                    NAT IP.
+                  properties:
+                    kind:
+                      description: Kind is the kind of the providing source.
+                      type: string
+                    name:
+                      description: Name is the name of the providing source.
+                      type: string
+                    uid:
+                      description: UID is the UID of the providing source.
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - uid
+                  type: object
+              required:
+              - ipFamily
+              type: object
+            type: array
+            x-kubernetes-list-map-keys:
+            - ipFamily
+            x-kubernetes-list-type: map
+          ips:
+            items:
+              type: string
+            type: array
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          network:
+            description: Network specifies the network configuration.
+            properties:
+              name:
+                type: string
+              vni:
+                format: int32
+                type: integer
+            required:
+            - name
+            - vni
+            type: object
+          prefixes:
+            items:
+              description: IPPrefix represents a network prefix.
+              type: object
+            type: array
+        required:
+        - ips
+        - network
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

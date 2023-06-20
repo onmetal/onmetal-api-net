@@ -25,6 +25,8 @@ import (
 
 	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	onmetalapinet "github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/onmetal-api-net"
+	"github.com/onmetal/onmetal-api-net/onmetal-api-net/expectations"
+	"github.com/onmetal/onmetal-api-net/onmetal-api-net/natgateway"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go4.org/netipx"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/lru"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -44,9 +47,11 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
+var (
+	cfg       *rest.Config
+	k8sClient client.Client
+	testEnv   *envtest.Environment
+)
 
 const (
 	pollingInterval      = 50 * time.Millisecond
@@ -67,7 +72,7 @@ func TestControllers(t *testing.T) {
 
 func InitialAvailableIPs() *netipx.IPSet {
 	var sb netipx.IPSetBuilder
-	sb.AddPrefix(netip.MustParsePrefix("10.0.0.0/31"))
+	sb.AddPrefix(netip.MustParsePrefix("10.0.0.0/24"))
 	set, _ := sb.IPSet()
 	return set
 }
@@ -109,7 +114,6 @@ var _ = BeforeSuite(func() {
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:             scheme.Scheme,
-		Host:               "127.0.0.1",
 		MetricsBindAddress: "0",
 	})
 	Expect(err).ToNot(HaveOccurred())
@@ -130,9 +134,34 @@ var _ = BeforeSuite(func() {
 		MaxVNI:        MaxVNI,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
+	Expect((&NATGatewayReconciler{
+		Client:        k8sManager.GetClient(),
+		EventRecorder: &record.FakeRecorder{},
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
+	Expect((&NetworkInterfaceReconciler{
+		Client: k8sManager.GetClient(),
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
+	Expect((&LoadBalancerReconciler{
+		Client: k8sManager.GetClient(),
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
 	Expect((&CertificateApprovalReconciler{
 		Client:      k8sManager.GetClient(),
 		Recognizers: onmetalapinet.Recognizers,
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
+	Expect((&PublicIPGarbageCollectorReconciler{
+		Client:       k8sManager.GetClient(),
+		APIReader:    k8sManager.GetAPIReader(),
+		absenceCache: lru.New(100),
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
+	Expect((&NATGatewayAutoscalerReconciler{
+		Client:       k8sManager.GetClient(),
+		Expectations: expectations.New(),
+		Selectors:    natgateway.NewAutoscalerSelectors(),
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	mgrCtx, cancel := context.WithCancel(context.Background())

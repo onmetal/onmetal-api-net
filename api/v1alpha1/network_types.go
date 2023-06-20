@@ -68,7 +68,7 @@ type NetworkStatus struct {
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.conditions[?(@.type == "Allocated")].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
-// Network is the schema for the publicips API.
+// Network is the schema for the networks API.
 type Network struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

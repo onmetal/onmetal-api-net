@@ -46,6 +46,24 @@ spec:
             type: object
           spec:
             properties:
+              claimRef:
+                description: ClaimerRef references the claimer of the public IP, if
+                  any.
+                properties:
+                  kind:
+                    description: Kind is the kind of the claimer.
+                    type: string
+                  name:
+                    description: Name is the name of the claimer.
+                    type: string
+                  uid:
+                    description: UID is the UID of the claimer.
+                    type: string
+                required:
+                - kind
+                - name
+                - uid
+                type: object
               ip:
                 description: IP is the ip of the public IP. Pointer to distinguish
                   between unset and explicit zero.

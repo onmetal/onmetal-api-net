@@ -263,7 +263,11 @@ func (r *PublicIPReconciler) reconcile(ctx context.Context, log logr.Logger, pub
 		log.V(1).Info("Error allocating, patching public ip as pending", "Error", err)
 		r.Eventf(publicIP, corev1.EventTypeNormal, FailedAllocatingPublicIP, "Failed allocating: %w", err)
 		if err := r.patchStatusPending(ctx, publicIP); err != nil {
-			return ctrl.Result{}, err
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
+			log.V(1).Info("Public IP is already gone")
+			return ctrl.Result{}, nil
 		}
 		log.V(1).Info("Successfully marked public ip as pending")
 		return ctrl.Result{}, nil
@@ -275,7 +279,13 @@ func (r *PublicIPReconciler) reconcile(ctx context.Context, log logr.Logger, pub
 	if publicIP.Spec.IP == nil {
 		log.V(1).Info("Patching allocated ip into spec")
 		if err := r.patchPublicIPSpecIP(ctx, publicIP, ip); err != nil {
-			return ctrl.Result{}, err
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
+
+			log.V(1).Info("Public IP is already gone, releasing it")
+			r.release(ctx, client.ObjectKeyFromObject(publicIP))
+			return ctrl.Result{}, nil
 		}
 		log.V(1).Info("Patched allocated ip into spec, requeueing")
 		return ctrl.Result{Requeue: true}, nil
@@ -404,7 +414,7 @@ func (r *PublicIPReconciler) requeuePublicIPCandidates(ctx context.Context) erro
 				var errs []error
 				for _, candidate := range candidates {
 					log.V(1).Info("Requesting reconciliation", "CandidateKey", client.ObjectKeyFromObject(&candidate))
-					if err := PatchAddReconcileAnnotation(ctx, r.Client, &candidate); err != nil {
+					if err := PatchAddReconcileAnnotation(ctx, r.Client, &candidate); client.IgnoreNotFound(err) != nil {
 						errs = append(errs, err)
 					}
 				}

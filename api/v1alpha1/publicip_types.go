@@ -17,6 +17,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type PublicIPSpec struct {
@@ -25,6 +26,17 @@ type PublicIPSpec struct {
 	// IP is the ip of the public IP.
 	// Pointer to distinguish between unset and explicit zero.
 	IP *IP `json:"ip,omitempty"`
+	// ClaimerRef references the claimer of the public IP, if any.
+	ClaimerRef *PublicIPClaimerRef `json:"claimRef,omitempty"`
+}
+
+type PublicIPClaimerRef struct {
+	// Kind is the kind of the claimer.
+	Kind string `json:"kind"`
+	// Name is the name of the claimer.
+	Name string `json:"name"`
+	// UID is the UID of the claimer.
+	UID types.UID `json:"uid"`
 }
 
 type PublicIPConditionType string
@@ -76,16 +88,6 @@ type PublicIP struct {
 
 	Spec   PublicIPSpec   `json:"spec,omitempty"`
 	Status PublicIPStatus `json:"status,omitempty"`
-}
-
-func (ip *PublicIP) IsAllocated() bool {
-	apiNetPublicIPConditions := ip.Status.Conditions
-	idx := PublicIPConditionIndex(ip.Status.Conditions, PublicIPAllocated)
-	if idx < 0 || apiNetPublicIPConditions[idx].Status != corev1.ConditionTrue {
-		return false
-	}
-
-	return ip.Spec.IP.IsValid()
 }
 
 // +kubebuilder:object:root=true

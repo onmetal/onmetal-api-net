@@ -3,7 +3,9 @@ module github.com/onmetal/onmetal-api-net
 go 1.20
 
 require (
+	github.com/bits-and-blooms/bitset v1.7.0
 	github.com/go-logr/logr v1.2.4
+	github.com/google/uuid v1.3.0
 	github.com/onmetal/controller-utils v0.8.0
 	github.com/onmetal/metalnet v0.1.0
 	github.com/onmetal/onmetal-api v0.1.2-0.20230530094909-67f87469764c
@@ -43,7 +45,6 @@ require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
