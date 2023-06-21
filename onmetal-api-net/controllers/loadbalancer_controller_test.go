@@ -34,6 +34,9 @@ var _ = Describe("LoadBalancerController", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
 				GenerateName: "public-ip-",
+				Labels: map[string]string{
+					"app": "web",
+				},
 			},
 			Spec: v1alpha1.PublicIPSpec{
 				IPFamily: corev1.IPv4Protocol,
@@ -58,8 +61,10 @@ var _ = Describe("LoadBalancerController", func() {
 						"foo": "bar",
 					},
 				},
-				PublicIPRefs: []corev1.LocalObjectReference{
-					{Name: publicIP.Name},
+				IPSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": "web",
+					},
 				},
 			},
 		}
@@ -68,7 +73,7 @@ var _ = Describe("LoadBalancerController", func() {
 		By("waiting for the load balancer to report the public IPs")
 		Eventually(Object(loadBalancer)).Should(HaveField("Status.IPs", Equal([]v1alpha1.IP{*publicIP.Spec.IP})))
 
-		By("creating a network interface that is a target to the NAT gateway")
+		By("creating a network interface that is a target to the load balancer")
 		nic := &v1alpha1.NetworkInterface{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
@@ -79,10 +84,9 @@ var _ = Describe("LoadBalancerController", func() {
 			},
 			Spec: v1alpha1.NetworkInterfaceSpec{
 				NetworkRef:   corev1.LocalObjectReference{Name: network.Name},
-				IPFamilies:   []corev1.IPFamily{corev1.IPv4Protocol},
 				PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
-				IPs: []v1alpha1.NetworkInterfaceIP{
-					{IP: v1alpha1.MustParseNewIP("10.0.0.1")},
+				IPs: []v1alpha1.IP{
+					v1alpha1.MustParseIP("10.0.0.1"),
 				},
 			},
 		}

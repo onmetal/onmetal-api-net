@@ -25,20 +25,13 @@ type NetworkInterfaceSpec struct {
 	PartitionRef corev1.LocalObjectReference `json:"partitionRef"`
 	// NetworkRef references the network that the network interface is part of.
 	NetworkRef corev1.LocalObjectReference `json:"networkRef"`
-	// IPFamilies are the IP families the network interface has.
-	IPFamilies []corev1.IPFamily `json:"ipFamilies"`
-	// IPs specifies the IPs the for the network interface.
-	IPs []NetworkInterfaceIP `json:"ips"`
+	// IPs specifies the internal IPs for the network interface.
+	// TODO: Allow for ephemeral internal IPs to be requested.
+	IPs []IP `json:"ips"`
 	// Prefixes specifies the additional IP prefixes for the network interface.
 	Prefixes []NetworkInterfacePrefix `json:"prefixes,omitempty"`
 	// PublicIPRefs are the public IPs for the network interface.
 	PublicIPRefs []NetworkInterfacePublicIPRef `json:"publicIPRefs,omitempty"`
-}
-
-// NetworkInterfaceIP specifies how to allocate an IP for a network interface.
-type NetworkInterfaceIP struct {
-	// IP specifies a literal IP for the network interface.
-	IP *IP `json:"ip,omitempty"`
 }
 
 type NetworkInterfacePrefix struct {

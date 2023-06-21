@@ -17,6 +17,7 @@ package apiutils
 import (
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func IsNetworkAllocated(network *v1alpha1.Network) bool {
@@ -35,4 +36,13 @@ func IsPublicIPAllocated(ip *v1alpha1.PublicIP) bool {
 		}
 	}
 	return false
+}
+
+func IsPublicIPClaimedBy(ip *v1alpha1.PublicIP, claimer client.Object) bool {
+	claimerRef := ip.Spec.ClaimerRef
+	if claimerRef == nil {
+		return false
+	}
+
+	return claimerRef.UID == claimer.GetUID()
 }

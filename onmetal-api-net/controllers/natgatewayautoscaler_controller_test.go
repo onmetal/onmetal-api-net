@@ -63,10 +63,7 @@ var _ = Describe("NATGatewayAutoscalerController", func() {
 		Expect(k8sClient.Create(ctx, natGatewayAutoscaler)).To(Succeed())
 
 		By("waiting for the NAT gateway to have a public IP")
-		Eventually(Object(natGateway)).Should(SatisfyAll(
-			HaveField("Spec.PublicIPRefs", HaveLen(1)),
-			HaveField("Status.IPs", HaveLen(1)),
-		))
+		Eventually(Object(natGateway)).Should(HaveField("Status.IPs", HaveLen(1)))
 
 		By("asserting there is only a single public IP in the namespace")
 		publicIPList := &v1alpha1.PublicIPList{}
@@ -84,18 +81,14 @@ var _ = Describe("NATGatewayAutoscalerController", func() {
 				Spec: v1alpha1.NetworkInterfaceSpec{
 					PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
 					NetworkRef:   corev1.LocalObjectReference{Name: network.Name},
-					IPFamilies:   []corev1.IPFamily{corev1.IPv4Protocol},
-					IPs:          []v1alpha1.NetworkInterfaceIP{{IP: v1alpha1.MustParseNewIP("10.0.0.1")}},
+					IPs:          []v1alpha1.IP{v1alpha1.MustParseIP("10.0.0.1")},
 				},
 			}
 			Expect(k8sClient.Create(ctx, &nics[i])).To(Succeed())
 		}
 
 		By("waiting for the NAT gateway to have three (maximum amount) public IPs")
-		Eventually(Object(natGateway)).WithTimeout(10 * time.Second).Should(SatisfyAll(
-			HaveField("Spec.PublicIPRefs", HaveLen(3)),
-			HaveField("Status.IPs", HaveLen(3)),
-		))
+		Eventually(Object(natGateway)).WithTimeout(10 * time.Second).Should(HaveField("Status.IPs", HaveLen(3)))
 
 		By("asserting there are only two public IPs in the namespace")
 		Expect(k8sClient.List(ctx, publicIPList, client.InNamespace(ns.Name))).To(Succeed())
@@ -107,10 +100,7 @@ var _ = Describe("NATGatewayAutoscalerController", func() {
 		}
 
 		By("waiting for the NAT gateway to have a single public IP again")
-		Eventually(Object(natGateway)).WithTimeout(10 * time.Second).Should(SatisfyAll(
-			HaveField("Spec.PublicIPRefs", HaveLen(1)),
-			HaveField("Status.IPs", HaveLen(1)),
-		))
+		Eventually(Object(natGateway)).WithTimeout(10 * time.Second).Should(HaveField("Status.IPs", HaveLen(1)))
 
 		By("waiting for all public IPs to be one except one")
 		Eventually(func(g Gomega) []v1alpha1.PublicIP {

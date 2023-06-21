@@ -7,9 +7,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	"github.com/onmetal/onmetal-api-net/apiutils"
 	"github.com/onmetal/onmetal-api-net/onmetal-api-net/expectations"
 	"github.com/onmetal/onmetal-api-net/onmetal-api-net/natgateway"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -81,6 +81,11 @@ func (r *NATGatewayAutoscalerReconciler) reconcile(ctx context.Context, log logr
 		return ctrl.Result{}, nil
 	}
 
+	if natGateway.Spec.IPSelector != nil {
+		log.V(1).Info("Cannot manage NAT gateway with IP selector set")
+		return ctrl.Result{}, nil
+	}
+
 	r.Selectors.Put(client.ObjectKeyFromObject(natGatewayAutoscaler), natgateway.SelectNetwork(natGateway.Spec.NetworkRef.Name))
 
 	usedPublicIPs, err := r.getPublicIPsForNATGateway(ctx, natGatewayAutoscaler, natGateway)
@@ -135,27 +140,10 @@ func getPublicIPKeysFromPublicIPs(publicIPs []v1alpha1.PublicIP) []client.Object
 	return keys
 }
 
-func getLocalObjectReferencesFromNames(names []string) []corev1.LocalObjectReference {
-	refs := make([]corev1.LocalObjectReference, len(names))
-	for i, name := range names {
-		refs[i] = corev1.LocalObjectReference{Name: name}
-	}
-	return refs
-}
-
-func getLocalObjectReferencesFromPublicIPs(publicIPs []v1alpha1.PublicIP) []corev1.LocalObjectReference {
-	refs := make([]corev1.LocalObjectReference, len(publicIPs))
-	for i, publicIP := range publicIPs {
-		refs[i] = corev1.LocalObjectReference{Name: publicIP.Name}
-	}
-	return refs
-}
-
-func splitPublicIPsToDelete(publicIPs []v1alpha1.PublicIP, ct int) (keep, delete []v1alpha1.PublicIP) {
+func getPublicIPsToDelete(publicIPs []v1alpha1.PublicIP, ct int) []v1alpha1.PublicIP {
 	idx := len(publicIPs) - ct
-	keep = publicIPs[:idx]
-	delete = publicIPs[idx:]
-	return keep, delete
+	del := publicIPs[idx:]
+	return del
 }
 
 func (r *NATGatewayAutoscalerReconciler) managePublicIPs(
@@ -178,11 +166,6 @@ func (r *NATGatewayAutoscalerReconciler) managePublicIPs(
 	if diff < 0 {
 		diff *= -1
 		createNames := r.makeCreateNames(natGateway, diff)
-		newPublicIPRefs := append(getLocalObjectReferencesFromPublicIPs(usedPublicIPs), getLocalObjectReferencesFromNames(createNames)...)
-		if err := r.updateNATGatewayPublicIPRefs(ctx, natGateway, newPublicIPRefs); err != nil {
-			return fmt.Errorf("error updating public IP refs: %w", err)
-		}
-
 		r.Expectations.ExpectCreations(ctrlKey, getPublicIPKeysFromNames(natGateway.Namespace, createNames))
 
 		var errs []error
@@ -195,12 +178,7 @@ func (r *NATGatewayAutoscalerReconciler) managePublicIPs(
 		}
 		return errors.Join(errs...)
 	} else if diff > 0 {
-		keep, del := splitPublicIPsToDelete(usedPublicIPs, diff)
-		newPublicIPRefs := getLocalObjectReferencesFromPublicIPs(keep)
-		if err := r.updateNATGatewayPublicIPRefs(ctx, natGateway, newPublicIPRefs); err != nil {
-			return fmt.Errorf("error updating public IP refs: %w", err)
-		}
-
+		del := getPublicIPsToDelete(usedPublicIPs, diff)
 		r.Expectations.ExpectDeletions(ctrlKey, getPublicIPKeysFromPublicIPs(del))
 		var errs []error
 		for _, publicIP := range del {
@@ -249,30 +227,13 @@ func (r *NATGatewayAutoscalerReconciler) getPublicIPsForNATGateway(
 	}
 
 	var (
-		names   = natGatewayPublicIPNames(natGateway)
 		isInUse = func(publicIP *v1alpha1.PublicIP) bool {
 			if !metav1.IsControlledBy(publicIP, natGateway) || publicIP.Spec.IPFamily != natGateway.Spec.IPFamily {
 				// We only care about correctly managed objects.
 				return false
 			}
 
-			claimerRef := publicIP.Spec.ClaimerRef
-			if claimerRef == nil {
-				// Don't care about public IPs without claimer set.
-				return false
-			}
-
-			if claimerRef.UID != natGateway.UID {
-				// Different claimer - skip.
-				return false
-			}
-
-			if !names.Has(publicIP.Name) {
-				// We're not referencing this public IP - skip.
-				return false
-			}
-
-			return true
+			return apiutils.IsPublicIPClaimedBy(publicIP, natGateway)
 		}
 		errs []error
 	)
@@ -342,19 +303,6 @@ func (r *NATGatewayAutoscalerReconciler) createNATGatewayPublicIP(
 		return nil, fmt.Errorf("error creating public IP: %w", err)
 	}
 	return publicIP, nil
-}
-
-func (r *NATGatewayAutoscalerReconciler) updateNATGatewayPublicIPRefs(
-	ctx context.Context,
-	natGateway *v1alpha1.NATGateway,
-	publicIPRefs []corev1.LocalObjectReference,
-) error {
-	base := natGateway.DeepCopy()
-	natGateway.Spec.PublicIPRefs = publicIPRefs
-	if err := r.Patch(ctx, natGateway, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("error patching NAT gateway: %w", err)
-	}
-	return nil
 }
 
 func (r *NATGatewayAutoscalerReconciler) getRequestsByNATGatewayKey(ctx context.Context, natGatewayKey client.ObjectKey) ([]ctrl.Request, error) {

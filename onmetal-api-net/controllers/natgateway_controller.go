@@ -13,7 +13,8 @@ import (
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -84,36 +85,7 @@ func (r *NATGatewayReconciler) reconcileExists(ctx context.Context, log logr.Log
 	return r.reconcile(ctx, log, natGateway)
 }
 
-func natGatewayPublicIPNames(natGateway *v1alpha1.NATGateway) sets.Set[string] {
-	names := sets.New[string]()
-	for _, publicIPRef := range natGateway.Spec.PublicIPRefs {
-		names.Insert(publicIPRef.Name)
-	}
-	return names
-}
-
-func natGatewayPublicIPSelector(natGateway *v1alpha1.NATGateway) func(*v1alpha1.PublicIP) bool {
-	names := natGatewayPublicIPNames(natGateway)
-	return func(publicIP *v1alpha1.PublicIP) bool {
-		return publicIP.Spec.IPFamily == natGateway.Spec.IPFamily &&
-			names.Has(publicIP.Name)
-	}
-}
-
-func natGatewayReferencesPublicIP(natGateway *v1alpha1.NATGateway, publicIP *v1alpha1.PublicIP) bool {
-	if natGateway.Spec.IPFamily != publicIP.Spec.IPFamily {
-		return false
-	}
-
-	for _, publicIPRef := range natGateway.Spec.PublicIPRefs {
-		if publicIPRef.Name == publicIP.Name {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *NATGatewayReconciler) getPublicIPsForNATGateway(ctx context.Context, natGateway *v1alpha1.NATGateway) ([]v1alpha1.IP, error) {
+func (r *NATGatewayReconciler) getExternallyManagedPublicIPsForNATGateway(ctx context.Context, natGateway *v1alpha1.NATGateway) ([]v1alpha1.IP, error) {
 	publicIPList := &v1alpha1.PublicIPList{}
 	if err := r.List(ctx, publicIPList,
 		client.InNamespace(natGateway.Namespace),
@@ -122,8 +94,47 @@ func (r *NATGatewayReconciler) getPublicIPsForNATGateway(ctx context.Context, na
 	}
 
 	var (
-		sel      = natGatewayPublicIPSelector(natGateway)
-		claimMgr = publicip.NewClaimManager(r.Client, natGatewayKind, natGateway, sel)
+		ips  []v1alpha1.IP
+		errs []error
+	)
+	for i := range publicIPList.Items {
+		publicIP := &publicIPList.Items[i]
+		if publicIP.Spec.IPFamily != natGateway.Spec.IPFamily {
+			// Don't include public IPs with a different IP family.
+			continue
+		}
+
+		if !apiutils.IsPublicIPClaimedBy(publicIP, natGateway) {
+			// Don't include public IPs that are not claimed.
+			continue
+		}
+
+		if !apiutils.IsPublicIPAllocated(publicIP) {
+			continue
+		}
+
+		ips = append(ips, *publicIP.Spec.IP)
+	}
+	return ips, errors.Join(errs...)
+}
+
+func (r *NATGatewayReconciler) getAndManagePublicIPsForNATGateway(ctx context.Context, natGateway *v1alpha1.NATGateway) ([]v1alpha1.IP, error) {
+	sel, err := metav1.LabelSelectorAsSelector(natGateway.Spec.IPSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	publicIPList := &v1alpha1.PublicIPList{}
+	if err := r.List(ctx, publicIPList,
+		client.InNamespace(natGateway.Namespace),
+	); err != nil {
+		return nil, fmt.Errorf("error listing public ips: %w", err)
+	}
+
+	var (
+		claimMgr = publicip.NewClaimManager(r.Client, natGatewayKind, natGateway, func(publicIP *v1alpha1.PublicIP) bool {
+			return natGateway.Spec.IPFamily == publicIP.Spec.IPFamily && sel.Matches(labels.Set(publicIP.Labels))
+		})
 
 		ips  []v1alpha1.IP
 		errs []error
@@ -368,10 +379,24 @@ func (r *NATGatewayReconciler) updateNATGatewayUsedNATIPs(ctx context.Context, n
 func (r *NATGatewayReconciler) reconcile(ctx context.Context, log logr.Logger, natGateway *v1alpha1.NATGateway) (ctrl.Result, error) {
 	log.V(1).Info("Reconcile")
 
-	log.V(1).Info("Getting public IPs for NAT gateway")
-	ips, err := r.getPublicIPsForNATGateway(ctx, natGateway)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting public ips for nat gateway: %w", err)
+	var ips []v1alpha1.IP
+
+	if natGateway.Spec.IPSelector == nil {
+		log.V(1).Info("Getting externally managed public IPs for NAT gateway")
+		externallyManagedPublicIPs, err := r.getExternallyManagedPublicIPsForNATGateway(ctx, natGateway)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error getting externally managed public IPs for NAT gateway: %w", err)
+		}
+
+		ips = externallyManagedPublicIPs
+	} else {
+		log.V(1).Info("Getting and managing public IPs for NAT gateway")
+		managedPublicIPs, err := r.getAndManagePublicIPsForNATGateway(ctx, natGateway)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error getting public ips for nat gateway: %w", err)
+		}
+
+		ips = managedPublicIPs
 	}
 	log = log.WithValues("IPs", ips)
 
@@ -426,7 +451,17 @@ func (r *NATGatewayReconciler) enqueueByPublicIPNATGatewaySelection() handler.Ev
 
 		var reqs []ctrl.Request
 		for _, natGateway := range natGatewayList.Items {
-			if natGatewayReferencesPublicIP(&natGateway, publicIP) {
+			if natGateway.Spec.IPFamily != publicIP.Spec.IPFamily {
+				// Don't include NAT gateways with different IP families.
+				continue
+			}
+
+			sel, err := metav1.LabelSelectorAsSelector(natGateway.Spec.IPSelector)
+			if err != nil {
+				continue
+			}
+
+			if sel.Matches(labels.Set(publicIP.Labels)) {
 				reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&natGateway)})
 			}
 		}

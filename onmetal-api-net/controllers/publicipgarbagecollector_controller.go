@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	"github.com/onmetal/onmetal-api-net/apiutils"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
@@ -121,73 +122,32 @@ func (r *PublicIPGarbageCollectorReconciler) releasePublicIP(ctx context.Context
 	return nil
 }
 
-func (r *PublicIPGarbageCollectorReconciler) enqueueByNATGateway() handler.EventHandler {
-	mapAndEnqueue := func(natGateway *v1alpha1.NATGateway, queue workqueue.RateLimitingInterface) {
-		for _, publicIPRef := range natGateway.Spec.PublicIPRefs {
-			queue.Add(ctrl.Request{NamespacedName: client.ObjectKey{
-				Namespace: natGateway.Namespace,
-				Name:      publicIPRef.Name,
-			}})
-		}
-	}
+func (r *PublicIPGarbageCollectorReconciler) enqueueByClaimer() handler.EventHandler {
+	mapAndEnqueue := func(ctx context.Context, claimer client.Object, queue workqueue.RateLimitingInterface) {
+		log := ctrl.LoggerFrom(ctx)
 
-	return &handler.Funcs{
-		DeleteFunc: func(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
-			natGateway := event.Object.(*v1alpha1.NATGateway)
-			mapAndEnqueue(natGateway, queue)
-		},
-		GenericFunc: func(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
-			natGateway := event.Object.(*v1alpha1.NATGateway)
-			if !natGateway.DeletionTimestamp.IsZero() {
-				mapAndEnqueue(natGateway, queue)
+		publicIPList := &v1alpha1.PublicIPList{}
+		if err := r.List(ctx, publicIPList,
+			client.InNamespace(claimer.GetNamespace()),
+		); err != nil {
+			log.Error(err, "Error listing public IPs")
+			return
+		}
+
+		for _, publicIP := range publicIPList.Items {
+			if apiutils.IsPublicIPClaimedBy(&publicIP, claimer) {
+				queue.Add(ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&publicIP)})
 			}
-		},
-	}
-}
-
-func (r *PublicIPGarbageCollectorReconciler) enqueueByLoadBalancer() handler.EventHandler {
-	mapAndEnqueue := func(loadBalancer *v1alpha1.LoadBalancer, queue workqueue.RateLimitingInterface) {
-		for _, publicIPRef := range loadBalancer.Spec.PublicIPRefs {
-			queue.Add(ctrl.Request{NamespacedName: client.ObjectKey{
-				Namespace: loadBalancer.Namespace,
-				Name:      publicIPRef.Name,
-			}})
 		}
 	}
 
 	return &handler.Funcs{
 		DeleteFunc: func(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
-			loadBalancer := event.Object.(*v1alpha1.LoadBalancer)
-			mapAndEnqueue(loadBalancer, queue)
+			mapAndEnqueue(ctx, event.Object, queue)
 		},
 		GenericFunc: func(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
-			loadBalancer := event.Object.(*v1alpha1.LoadBalancer)
-			if !loadBalancer.DeletionTimestamp.IsZero() {
-				mapAndEnqueue(loadBalancer, queue)
-			}
-		},
-	}
-}
-
-func (r *PublicIPGarbageCollectorReconciler) enqueueByNetworkInterface() handler.EventHandler {
-	mapAndEnqueue := func(nic *v1alpha1.NetworkInterface, queue workqueue.RateLimitingInterface) {
-		for _, publicIPRef := range nic.Spec.PublicIPRefs {
-			queue.Add(ctrl.Request{NamespacedName: client.ObjectKey{
-				Namespace: nic.Namespace,
-				Name:      publicIPRef.Name,
-			}})
-		}
-	}
-
-	return &handler.Funcs{
-		DeleteFunc: func(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
-			nic := event.Object.(*v1alpha1.NetworkInterface)
-			mapAndEnqueue(nic, queue)
-		},
-		GenericFunc: func(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
-			nic := event.Object.(*v1alpha1.NetworkInterface)
-			if !nic.DeletionTimestamp.IsZero() {
-				mapAndEnqueue(nic, queue)
+			if !event.Object.GetDeletionTimestamp().IsZero() {
+				mapAndEnqueue(ctx, event.Object, queue)
 			}
 		},
 	}
@@ -202,15 +162,15 @@ func (r *PublicIPGarbageCollectorReconciler) SetupWithManager(mgr ctrl.Manager) 
 		).
 		Watches(
 			&v1alpha1.NATGateway{},
-			r.enqueueByNATGateway(),
+			r.enqueueByClaimer(),
 		).
 		Watches(
 			&v1alpha1.NetworkInterface{},
-			r.enqueueByNetworkInterface(),
+			r.enqueueByClaimer(),
 		).
 		Watches(
 			&v1alpha1.LoadBalancer{},
-			r.enqueueByLoadBalancer(),
+			r.enqueueByClaimer(),
 		).
 		Complete(r)
 }

@@ -34,6 +34,9 @@ var _ = Describe("NATGatewayController", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
 				GenerateName: "public-ip-",
+				Labels: map[string]string{
+					"my": "nat-gateway",
+				},
 			},
 			Spec: v1alpha1.PublicIPSpec{
 				IPFamily: corev1.IPv4Protocol,
@@ -54,8 +57,10 @@ var _ = Describe("NATGatewayController", func() {
 				IPFamily:                 corev1.IPv4Protocol,
 				NetworkRef:               corev1.LocalObjectReference{Name: network.Name},
 				PortsPerNetworkInterface: 64,
-				PublicIPRefs: []corev1.LocalObjectReference{
-					{Name: publicIP.Name},
+				IPSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"my": "nat-gateway",
+					},
 				},
 			},
 		}
@@ -72,10 +77,9 @@ var _ = Describe("NATGatewayController", func() {
 			},
 			Spec: v1alpha1.NetworkInterfaceSpec{
 				NetworkRef:   corev1.LocalObjectReference{Name: network.Name},
-				IPFamilies:   []corev1.IPFamily{corev1.IPv4Protocol},
 				PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
-				IPs: []v1alpha1.NetworkInterfaceIP{
-					{IP: v1alpha1.MustParseNewIP("10.0.0.1")},
+				IPs: []v1alpha1.IP{
+					v1alpha1.MustParseIP("10.0.0.1"),
 				},
 			},
 		}

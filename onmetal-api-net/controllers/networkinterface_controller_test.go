@@ -43,6 +43,20 @@ var _ = Describe("NetworkInterfaceController", func() {
 		By("waiting for the network interface public IP to be allocated")
 		Eventually(Object(nicPublicIP)).Should(BeAllocatedPublicIP())
 
+		By("creating a NAT gateway")
+		natGateway := &v1alpha1.NATGateway{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:    ns.Name,
+				GenerateName: "nat-gateway-",
+			},
+			Spec: v1alpha1.NATGatewaySpec{
+				NetworkRef:               corev1.LocalObjectReference{Name: network.Name},
+				IPFamily:                 corev1.IPv4Protocol,
+				PortsPerNetworkInterface: 64,
+			},
+		}
+		Expect(k8sClient.Create(ctx, natGateway)).To(Succeed())
+
 		By("creating a public IP for the NAT gateway")
 		natGatewayPublicIP := &v1alpha1.PublicIP{
 			ObjectMeta: metav1.ObjectMeta{
@@ -51,29 +65,17 @@ var _ = Describe("NetworkInterfaceController", func() {
 			},
 			Spec: v1alpha1.PublicIPSpec{
 				IPFamily: corev1.IPv4Protocol,
+				ClaimerRef: &v1alpha1.PublicIPClaimerRef{
+					Kind: natGatewayKind,
+					Name: natGateway.Name,
+					UID:  natGateway.UID,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, natGatewayPublicIP)).To(Succeed())
 
 		By("waiting for the NAT gateway public IP to be allocated")
 		Eventually(Object(natGatewayPublicIP)).Should(BeAllocatedPublicIP())
-
-		By("creating a NAT gateway")
-		natGateway := &v1alpha1.NATGateway{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace:    ns.Name,
-				GenerateName: "nat-gateway-",
-			},
-			Spec: v1alpha1.NATGatewaySpec{
-				NetworkRef: corev1.LocalObjectReference{Name: network.Name},
-				IPFamily:   corev1.IPv4Protocol,
-				PublicIPRefs: []corev1.LocalObjectReference{
-					{Name: natGatewayPublicIP.Name},
-				},
-				PortsPerNetworkInterface: 64,
-			},
-		}
-		Expect(k8sClient.Create(ctx, natGateway)).To(Succeed())
 
 		By("creating a network interface")
 		nic := &v1alpha1.NetworkInterface{
@@ -83,14 +85,9 @@ var _ = Describe("NetworkInterfaceController", func() {
 			},
 			Spec: v1alpha1.NetworkInterfaceSpec{
 				NetworkRef: corev1.LocalObjectReference{Name: network.Name},
-				IPFamilies: []corev1.IPFamily{corev1.IPv6Protocol, corev1.IPv4Protocol},
-				IPs: []v1alpha1.NetworkInterfaceIP{
-					{
-						IP: v1alpha1.MustParseNewIP("ffff::0001"),
-					},
-					{
-						IP: v1alpha1.MustParseNewIP("10.0.0.1"),
-					},
+				IPs: []v1alpha1.IP{
+					v1alpha1.MustParseIP("ffff::0001"),
+					v1alpha1.MustParseIP("10.0.0.1"),
 				},
 				PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
 				PublicIPRefs: []v1alpha1.NetworkInterfacePublicIPRef{

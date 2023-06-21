@@ -61,9 +61,8 @@ var _ = Describe("PublicIPGarbageCollectorController", func() {
 			},
 			Spec: v1alpha1.NetworkInterfaceSpec{
 				NetworkRef: corev1.LocalObjectReference{Name: network.Name},
-				IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},
-				IPs: []v1alpha1.NetworkInterfaceIP{
-					{IP: v1alpha1.MustParseNewIP("10.0.0.1")},
+				IPs: []v1alpha1.IP{
+					v1alpha1.MustParseIP("10.0.0.1"),
 				},
 				PartitionRef: corev1.LocalObjectReference{
 					Name: "my-partition",

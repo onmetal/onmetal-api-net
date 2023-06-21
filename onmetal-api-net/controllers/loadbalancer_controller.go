@@ -14,7 +14,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,26 +61,37 @@ func (r *LoadBalancerReconciler) delete(ctx context.Context, log logr.Logger, lo
 	return ctrl.Result{}, nil
 }
 
-func loadBalancerPublicIPSelector(loadBalancer *v1alpha1.LoadBalancer) func(*v1alpha1.PublicIP) bool {
-	names := sets.New[string]()
-	for _, publicIPRef := range loadBalancer.Spec.PublicIPRefs {
-		names.Insert(publicIPRef.Name)
+func (r *LoadBalancerReconciler) getExternallyManagedPublicIPsForLoadBalancer(ctx context.Context, loadBalancer *v1alpha1.LoadBalancer) ([]v1alpha1.IP, error) {
+	publicIPList := &v1alpha1.PublicIPList{}
+	if err := r.List(ctx, publicIPList,
+		client.InNamespace(loadBalancer.Namespace),
+	); err != nil {
+		return nil, fmt.Errorf("error listing public IPs: %w", err)
 	}
-	return func(publicIP *v1alpha1.PublicIP) bool {
-		return names.Has(publicIP.Name)
-	}
-}
 
-func loadBalancerReferencesPublicIP(loadBalancer *v1alpha1.LoadBalancer, publicIP *v1alpha1.PublicIP) bool {
-	for _, publicIPRef := range loadBalancer.Spec.PublicIPRefs {
-		if publicIPRef.Name == publicIP.Name {
-			return true
+	var ips []v1alpha1.IP
+	for _, publicIP := range publicIPList.Items {
+		if !apiutils.IsPublicIPClaimedBy(&publicIP, loadBalancer) {
+			// Don't include public IPs that are not claimed.
+			continue
 		}
+
+		if !apiutils.IsPublicIPAllocated(&publicIP) {
+			// Don't include public IPs that are not allocated.
+			continue
+		}
+
+		ips = append(ips, *publicIP.Spec.IP)
 	}
-	return false
+	return ips, nil
 }
 
-func (r *LoadBalancerReconciler) getPublicIPsForLoadBalancer(ctx context.Context, loadBalancer *v1alpha1.LoadBalancer) ([]v1alpha1.IP, error) {
+func (r *LoadBalancerReconciler) getAndManagePublicIPsForLoadBalancer(ctx context.Context, loadBalancer *v1alpha1.LoadBalancer) ([]v1alpha1.IP, error) {
+	sel, err := metav1.LabelSelectorAsSelector(loadBalancer.Spec.IPSelector)
+	if err != nil {
+		return nil, err
+	}
+
 	publicIPList := &v1alpha1.PublicIPList{}
 	if err := r.List(ctx, publicIPList,
 		client.InNamespace(loadBalancer.Namespace),
@@ -90,9 +100,9 @@ func (r *LoadBalancerReconciler) getPublicIPsForLoadBalancer(ctx context.Context
 	}
 
 	var (
-		sel      = loadBalancerPublicIPSelector(loadBalancer)
-		claimMgr = publicip.NewClaimManager(r.Client, loadBalancerKind, loadBalancer, sel)
-
+		claimMgr = publicip.NewClaimManager(r.Client, loadBalancerKind, loadBalancer, func(ip *v1alpha1.PublicIP) bool {
+			return sel.Matches(labels.Set(ip.Labels))
+		})
 		ips  []v1alpha1.IP
 		errs []error
 	)
@@ -172,10 +182,30 @@ func (r *LoadBalancerReconciler) manageLoadBalancerRouting(ctx context.Context, 
 func (r *LoadBalancerReconciler) reconcile(ctx context.Context, log logr.Logger, loadBalancer *v1alpha1.LoadBalancer) (ctrl.Result, error) {
 	log.V(1).Info("Reconcile")
 
-	log.V(1).Info("Getting public IPs for load balancer")
-	ips, err := r.getPublicIPsForLoadBalancer(ctx, loadBalancer)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting public IPs for load balancer: %w", err)
+	var ips []v1alpha1.IP
+
+	switch loadBalancer.Spec.Type {
+	case v1alpha1.LoadBalancerTypePublic:
+		if loadBalancer.Spec.IPSelector == nil {
+			log.V(1).Info("Getting externally managed public IPs for load balancer")
+			externallyManagedIPs, err := r.getExternallyManagedPublicIPsForLoadBalancer(ctx, loadBalancer)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("error getting externally managed IPs for load balancer: %w", err)
+			}
+
+			ips = externallyManagedIPs
+		} else {
+			log.V(1).Info("Getting and managing public IPs for load balancer")
+			managedIPs, err := r.getAndManagePublicIPsForLoadBalancer(ctx, loadBalancer)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("error getting and managing IPs for load balancer: %w", err)
+			}
+
+			ips = managedIPs
+		}
+	case v1alpha1.LoadBalancerTypeInternal:
+		log.V(1).Info("Using internal load balancer IPs")
+		ips = loadBalancer.Spec.IPs
 	}
 
 	if !slices.Equal(loadBalancer.Status.IPs, ips) {
@@ -211,7 +241,12 @@ func (r *LoadBalancerReconciler) enqueueByPublicIPLoadBalancerSelection() handle
 
 		var reqs []ctrl.Request
 		for _, loadBalancer := range loadBalancerList.Items {
-			if loadBalancerReferencesPublicIP(&loadBalancer, publicIP) {
+			sel, err := metav1.LabelSelectorAsSelector(loadBalancer.Spec.IPSelector)
+			if err != nil {
+				continue
+			}
+
+			if sel.Matches(labels.Set(publicIP.Labels)) {
 				reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&loadBalancer)})
 			}
 		}

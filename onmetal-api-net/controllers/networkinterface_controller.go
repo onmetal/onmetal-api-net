@@ -144,22 +144,6 @@ func (r *NetworkInterfaceReconciler) getPublicIPsForNetworkInterface(ctx context
 	return extIPCfgs, errors.Join(errs...)
 }
 
-func (r *NetworkInterfaceReconciler) getIPsForNetworkInterface(ctx context.Context, nic *v1alpha1.NetworkInterface) ([]v1alpha1.IP, error) {
-	var (
-		ips  []v1alpha1.IP
-		errs []error
-	)
-	for _, nicIP := range nic.Spec.IPs {
-		switch {
-		case nicIP.IP != nil:
-			ips = append(ips, *nicIP.IP)
-		default:
-			errs = append(errs, fmt.Errorf("invalid network interface IP %#v", nicIP))
-		}
-	}
-	return ips, errors.Join(errs...)
-}
-
 func (r *NetworkInterfaceReconciler) computeExternalIPConfigs(ctx context.Context, nic *v1alpha1.NetworkInterface) ([]v1alpha1.ExternalIPConfig, error) {
 	publicIPExtIPCfgs, err := r.getPublicIPsForNetworkInterface(ctx, nic)
 	if err != nil {
@@ -197,10 +181,7 @@ func (r *NetworkInterfaceReconciler) manageNetworkInterfaceConfig(ctx context.Co
 		return nil
 	}
 
-	ips, err := r.getIPsForNetworkInterface(ctx, nic)
-	if err != nil {
-		return fmt.Errorf("error getting ips: %w", err)
-	}
+	ips := nic.Spec.IPs
 
 	extIPCfgs, err := r.computeExternalIPConfigs(ctx, nic)
 	if err != nil {

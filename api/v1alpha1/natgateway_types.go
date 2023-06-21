@@ -32,8 +32,10 @@ type NATGatewaySpec struct {
 	// +kubebuilder:default=2048
 	PortsPerNetworkInterface int32 `json:"portsPerNetworkInterface"`
 
-	// PublicIPRefs is the list of public IPs to use for the NAT Gateway.
-	PublicIPRefs []corev1.LocalObjectReference `json:"publicIPRefs,omitempty"`
+	// IPSelector selects the IPs to allocate for the NAT gateway.
+	// If empty or not present, this NAT gateway is assumed to have an external process claiming
+	// public IPs, which onmetal-api-net will not modify.
+	IPSelector *metav1.LabelSelector `json:"ipSelector,omitempty"`
 }
 
 type NATGatewayStatus struct {

@@ -40,25 +40,11 @@ spec:
             type: object
           spec:
             properties:
-              ipFamilies:
-                description: IPFamilies are the IP families the network interface
-                  has.
-                items:
-                  description: IPFamily represents the IP Family (IPv4 or IPv6). This
-                    type is used to express the family of an IP expressed by a type
-                    (e.g. service.spec.ipFamilies).
-                  type: string
-                type: array
               ips:
-                description: IPs specifies the IPs the for the network interface.
+                description: 'IPs specifies the internal IPs for the network interface.
+                  TODO: Allow for ephemeral internal IPs to be requested.'
                 items:
-                  description: NetworkInterfaceIP specifies how to allocate an IP
-                    for a network interface.
-                  properties:
-                    ip:
-                      description: IP specifies a literal IP for the network interface.
-                      type: string
-                  type: object
+                  type: string
                 type: array
               networkRef:
                 description: NetworkRef references the network that the network interface
@@ -106,7 +92,6 @@ spec:
                   type: object
                 type: array
             required:
-            - ipFamilies
             - ips
             - networkRef
             - partitionRef

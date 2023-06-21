@@ -19,8 +19,14 @@ type LoadBalancerSpec struct {
 	// NetworkRef references the network the load balancer is part of.
 	NetworkRef corev1.LocalObjectReference `json:"networkRef"`
 
-	// PublicIPRefs is the list of public IPs to use for the load balancer.
-	PublicIPRefs []corev1.LocalObjectReference `json:"publicIPRefs,omitempty"`
+	// IPSelector selects the IPs to allocate for the load balancer.
+	// If empty or not present, this load balancer is assumed to have an external process claiming
+	// public IPs, which onmetal-api-net will not modify.
+	IPSelector *metav1.LabelSelector `json:"ipSelector,omitempty"`
+
+	// IPs are the internal IPs of the load balancer.
+	// Can only be specified when Type is LoadBalancerTypeInternal.
+	IPs []IP `json:"ips,omitempty"`
 
 	// NetworkInterfaceSelector selects the network interfaces to target with this load balancer.
 	// If empty or not present, this load balancer is assumed to have an external process managing
