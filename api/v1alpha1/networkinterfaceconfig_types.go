@@ -14,17 +14,30 @@ type NetworkInterfaceConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// Network specifies the network configuration.
-	Network  NetworkConfig `json:"network"`
-	IPs      []IP          `json:"ips"`
-	Prefixes []IPPrefix    `json:"prefixes,omitempty"`
+	Network NetworkConfig `json:"network"`
+	// Node specifies the node configuration.
+	Node NodeConfig `json:"node"`
+	// IPs are the internal IPs of the network interface.
+	IPs []IP `json:"ips"`
+	// Prefixes are the prefixes of the network interface.
+	Prefixes []IPPrefix `json:"prefixes,omitempty"`
 	// +listType=map
 	// +listMapKey=ipFamily
 	ExternalIPs []ExternalIPConfig `json:"externalIPs,omitempty"`
 }
 
 type NetworkConfig struct {
+	// Name is the name of the network.
 	Name string `json:"name"`
-	VNI  int32  `json:"vni"`
+	// VNI is the vni of the network.
+	VNI int32 `json:"vni"`
+}
+
+type NodeConfig struct {
+	// Name is the name of the node.
+	Name string `json:"name"`
+	// Partition is the partition the node is located in.
+	Partition string `json:"partition"`
 }
 
 type ExternalIPConfig struct {

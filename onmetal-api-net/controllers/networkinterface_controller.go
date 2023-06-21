@@ -172,12 +172,36 @@ func (r *NetworkInterfaceReconciler) getNetworkConfig(ctx context.Context, nic *
 	}, nil
 }
 
+func (r *NetworkInterfaceReconciler) getNodeConfig(ctx context.Context, nic *v1alpha1.NetworkInterface) (*v1alpha1.NodeConfig, error) {
+	node := &v1alpha1.Node{}
+	nodeKey := client.ObjectKey{Name: nic.Spec.NodeRef.Name}
+	if err := r.Get(ctx, nodeKey, node); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("error getting node %s: %w", nodeKey.Name, err)
+		}
+		return nil, nil
+	}
+
+	return &v1alpha1.NodeConfig{
+		Name:      node.Name,
+		Partition: node.Spec.Partition,
+	}, nil
+}
+
 func (r *NetworkInterfaceReconciler) manageNetworkInterfaceConfig(ctx context.Context, log logr.Logger, nic *v1alpha1.NetworkInterface) error {
 	networkCfg, err := r.getNetworkConfig(ctx, nic)
 	if err != nil {
-		return fmt.Errorf("error getting network vni: %w", err)
+		return fmt.Errorf("error getting network config: %w", err)
 	}
 	if networkCfg == nil {
+		return nil
+	}
+
+	nodeCfg, err := r.getNodeConfig(ctx, nic)
+	if err != nil {
+		return fmt.Errorf("error getting node config: %w", err)
+	}
+	if nodeCfg == nil {
 		return nil
 	}
 
@@ -199,6 +223,7 @@ func (r *NetworkInterfaceReconciler) manageNetworkInterfaceConfig(ctx context.Co
 	// For now, let's go with the simple solution and revisit this in the future.
 	// TODO: revisit in the future whether refactoring this makes sense, consider support with NAT gateway ctrl.
 	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, nicCfg, func() error {
+		nicCfg.Node = *nodeCfg
 		nicCfg.Network = *networkCfg
 		nicCfg.IPs = ips
 		r.setNetworkInterfaceConfigExternalIPs(nicCfg, extIPCfgs)

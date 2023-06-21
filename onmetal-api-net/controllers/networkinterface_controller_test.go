@@ -89,7 +89,7 @@ var _ = Describe("NetworkInterfaceController", func() {
 					v1alpha1.MustParseIP("ffff::0001"),
 					v1alpha1.MustParseIP("10.0.0.1"),
 				},
-				PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
+				NodeRef: corev1.LocalObjectReference{Name: "my-node"},
 				PublicIPRefs: []v1alpha1.NetworkInterfacePublicIPRef{
 					{
 						IPFamily: corev1.IPv6Protocol,

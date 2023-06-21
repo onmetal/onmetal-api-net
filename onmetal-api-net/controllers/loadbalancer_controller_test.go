@@ -83,8 +83,8 @@ var _ = Describe("LoadBalancerController", func() {
 				},
 			},
 			Spec: v1alpha1.NetworkInterfaceSpec{
-				NetworkRef:   corev1.LocalObjectReference{Name: network.Name},
-				PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
+				NetworkRef: corev1.LocalObjectReference{Name: network.Name},
+				NodeRef:    corev1.LocalObjectReference{Name: "my-node"},
 				IPs: []v1alpha1.IP{
 					v1alpha1.MustParseIP("10.0.0.1"),
 				},
@@ -103,9 +103,9 @@ var _ = Describe("LoadBalancerController", func() {
 			BeControlledBy(loadBalancer),
 			HaveField("Destinations", Equal([]v1alpha1.LoadBalancerDestination{
 				{
-					Name:         nic.Name,
-					UID:          nic.UID,
-					PartitionRef: &nic.Spec.PartitionRef,
+					Name:    nic.Name,
+					UID:     nic.UID,
+					NodeRef: nic.Spec.NodeRef,
 				},
 			})),
 		))

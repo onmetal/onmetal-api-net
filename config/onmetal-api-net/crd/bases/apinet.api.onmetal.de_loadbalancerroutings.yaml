@@ -30,9 +30,9 @@ spec:
               properties:
                 name:
                   type: string
-                partitionRef:
-                  description: PartitionRef references the partition the destination
-                    is on.
+                nodeRef:
+                  description: NodeRef references the node the destination network
+                    interface is on.
                   properties:
                     name:
                       description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -48,7 +48,7 @@ spec:
                   type: string
               required:
               - name
-              - partitionRef
+              - nodeRef
               - uid
               type: object
             type: array

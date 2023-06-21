@@ -79,9 +79,9 @@ var _ = Describe("NATGatewayAutoscalerController", func() {
 					GenerateName: "nic-",
 				},
 				Spec: v1alpha1.NetworkInterfaceSpec{
-					PartitionRef: corev1.LocalObjectReference{Name: "my-partition"},
-					NetworkRef:   corev1.LocalObjectReference{Name: network.Name},
-					IPs:          []v1alpha1.IP{v1alpha1.MustParseIP("10.0.0.1")},
+					NodeRef:    corev1.LocalObjectReference{Name: "my-node"},
+					NetworkRef: corev1.LocalObjectReference{Name: network.Name},
+					IPs:        []v1alpha1.IP{v1alpha1.MustParseIP("10.0.0.1")},
 				},
 			}
 			Expect(k8sClient.Create(ctx, &nics[i])).To(Succeed())

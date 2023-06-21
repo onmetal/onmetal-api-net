@@ -64,9 +64,7 @@ var _ = Describe("PublicIPGarbageCollectorController", func() {
 				IPs: []v1alpha1.IP{
 					v1alpha1.MustParseIP("10.0.0.1"),
 				},
-				PartitionRef: corev1.LocalObjectReference{
-					Name: "my-partition",
-				},
+				NodeRef: corev1.LocalObjectReference{Name: "my-node"},
 			},
 		}
 		Expect(k8sClient.Create(ctx, nic)).To(Succeed())

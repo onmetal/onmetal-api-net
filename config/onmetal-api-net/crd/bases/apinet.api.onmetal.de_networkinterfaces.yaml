@@ -56,9 +56,8 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              partitionRef:
-                description: PartitionRef references the partition hosting the network
-                  interface.
+              nodeRef:
+                description: NodeRef references the node hosting the network interface.
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -94,7 +93,7 @@ spec:
             required:
             - ips
             - networkRef
-            - partitionRef
+            - nodeRef
             type: object
           status:
             properties:

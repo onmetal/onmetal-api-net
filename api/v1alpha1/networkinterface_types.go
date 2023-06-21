@@ -21,8 +21,8 @@ import (
 )
 
 type NetworkInterfaceSpec struct {
-	// PartitionRef references the partition hosting the network interface.
-	PartitionRef corev1.LocalObjectReference `json:"partitionRef"`
+	// NodeRef references the node hosting the network interface.
+	NodeRef corev1.LocalObjectReference `json:"nodeRef"`
 	// NetworkRef references the network that the network interface is part of.
 	NetworkRef corev1.LocalObjectReference `json:"networkRef"`
 	// IPs specifies the internal IPs for the network interface.

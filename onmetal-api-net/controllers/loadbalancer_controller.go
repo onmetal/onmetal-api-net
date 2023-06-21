@@ -9,7 +9,6 @@ import (
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	"github.com/onmetal/onmetal-api-net/apiutils"
 	"github.com/onmetal/onmetal-api-net/onmetal-api-net/publicip"
-	"github.com/onmetal/onmetal-api/utils/generic"
 	"golang.org/x/exp/slices"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -152,9 +151,9 @@ func (r *LoadBalancerReconciler) manageLoadBalancerRouting(ctx context.Context, 
 	destinations := make([]v1alpha1.LoadBalancerDestination, 0, len(nicList.Items))
 	for _, nic := range nicList.Items {
 		destinations = append(destinations, v1alpha1.LoadBalancerDestination{
-			Name:         nic.Name,
-			UID:          nic.UID,
-			PartitionRef: generic.Pointer(nic.Spec.PartitionRef),
+			Name:    nic.Name,
+			UID:     nic.UID,
+			NodeRef: nic.Spec.NodeRef,
 		})
 	}
 	slices.SortFunc(destinations, func(a, b v1alpha1.LoadBalancerDestination) bool {

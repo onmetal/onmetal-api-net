@@ -20,8 +20,8 @@ type LoadBalancerDestination struct {
 	Name string    `json:"name"`
 	UID  types.UID `json:"uid"`
 
-	// PartitionRef references the partition the destination is on.
-	PartitionRef *corev1.LocalObjectReference `json:"partitionRef"`
+	// NodeRef references the node the destination network interface is on.
+	NodeRef corev1.LocalObjectReference `json:"nodeRef"`
 }
 
 // +kubebuilder:object:root=true
