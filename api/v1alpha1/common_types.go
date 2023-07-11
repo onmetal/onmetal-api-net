@@ -25,6 +25,8 @@ import (
 const (
 	ReconcileRequestAnnotation = "reconcile.apinet.api.onmetal.de/requestedAt"
 
+	LoadBalancerInstanceAffinityGroupAnnotation = "apinet.api.onmetal.de/loadbalancerinstance-affinity"
+
 	// APINetletsGroup is the system rbac group all apinetlets are in.
 	APINetletsGroup = "apinet.api.onmetal.de:system:apinetlets"
 

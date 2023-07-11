@@ -82,6 +82,7 @@ spec:
             - ipFamily
             x-kubernetes-list-type: map
           ips:
+            description: IPs are the internal IPs of the network interface.
             items:
               type: string
             type: array
@@ -96,15 +97,31 @@ spec:
             description: Network specifies the network configuration.
             properties:
               name:
+                description: Name is the name of the network.
                 type: string
               vni:
+                description: VNI is the vni of the network.
                 format: int32
                 type: integer
             required:
             - name
             - vni
             type: object
+          node:
+            description: Node specifies the node configuration.
+            properties:
+              name:
+                description: Name is the name of the node.
+                type: string
+              partition:
+                description: Partition is the partition the node is located in.
+                type: string
+            required:
+            - name
+            - partition
+            type: object
           prefixes:
+            description: Prefixes are the prefixes of the network interface.
             items:
               description: IPPrefix represents a network prefix.
               type: object
@@ -112,6 +129,7 @@ spec:
         required:
         - ips
         - network
+        - node
         type: object
     served: true
     storage: true

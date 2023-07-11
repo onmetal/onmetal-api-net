@@ -85,27 +85,24 @@ var _ = Describe("NATGatewayController", func() {
 		}
 		Expect(k8sClient.Create(ctx, nic)).To(Succeed())
 
-		By("waiting for the network interface config to get a NAT IP")
-		nicCfg := &v1alpha1.NetworkInterfaceConfig{
+		By("waiting for the NAT gateway routing to allocate a destination for the network interface")
+		natGatewayRouting := &v1alpha1.NATGatewayRouting{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ns.Name,
-				Name:      nic.Name,
+				Name:      natGateway.Name,
 			},
 		}
-		Eventually(Object(nicCfg)).Should(
-			HaveField("ExternalIPs", []v1alpha1.ExternalIPConfig{
+		Eventually(Object(natGatewayRouting)).Should(
+			HaveField("Destinations", []v1alpha1.NATGatewayDestination{
 				{
-					IPFamily: corev1.IPv4Protocol,
-					SourceRef: &v1alpha1.SourceRef{
-						Kind: "NATGateway",
-						Name: natGateway.Name,
-						UID:  natGateway.UID,
-					},
-					NATIP: &v1alpha1.NATIP{
+					Name: nic.Name,
+					UID:  nic.UID,
+					NATIP: v1alpha1.NATIP{
 						IP:      *publicIP.Spec.IP,
 						Port:    1024,
 						EndPort: 1087,
 					},
+					NodeRef: nic.Spec.NodeRef,
 				},
 			}),
 		)

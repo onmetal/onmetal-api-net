@@ -22,14 +22,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/onmetal/controller-utils/modutils"
 	metalnetv1alpha1 "github.com/onmetal/metalnet/api/v1alpha1"
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	"github.com/onmetal/onmetal-api-net/metalnetlet/scheduler"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -41,9 +45,11 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
+var (
+	cfg       *rest.Config
+	k8sClient client.Client
+	testEnv   *envtest.Environment
+)
 
 const (
 	pollingInterval      = 50 * time.Millisecond
@@ -52,7 +58,8 @@ const (
 )
 
 const (
-	metalnetletName = "test-metalnetlet"
+	partitionName     = "test-metalnetlet"
+	metalnetNamespace = "metalnetlet-system"
 )
 
 func TestControllers(t *testing.T) {
@@ -69,11 +76,13 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(GinkgoLogr)
 
+	modutils := modutils.NewExecutor(modutils.ExecutorOptions{Dir: "../.."})
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "onmetal-api-net", "crd", "bases"),
-			filepath.Join("testdata", "metalnet-crds"),
+			filepath.Join(modutils.Dir("github.com/onmetal/metalnet", "config", "crd", "bases")),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -103,12 +112,59 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	metalnetNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: metalnetNamespace,
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), metalnetNs)).To(Succeed())
+
 	// register reconciler here
-	Expect((&NetworkReconciler{
-		Client:          k8sManager.GetClient(),
-		MetalnetCluster: k8sManager,
-		Name:            metalnetletName,
-	}).SetupWithManager(k8sManager)).To(Succeed())
+	partitionReconciler := &PartitionReconciler{
+		Client:        k8sManager.GetClient(),
+		PartitionName: partitionName,
+	}
+	Expect(partitionReconciler.SetupWithManager(k8sManager)).To(Succeed())
+
+	Expect(SetupRunAfter(k8sManager, func(ctx context.Context) error {
+		defer GinkgoRecover()
+		Expect((&NetworkReconciler{
+			Client:            k8sManager.GetClient(),
+			MetalnetCluster:   k8sManager,
+			PartitionName:     partitionName,
+			MetalnetNamespace: metalnetNamespace,
+		}).SetupWithManager(k8sManager)).To(Succeed())
+
+		Expect((&MetalnetNodeReconciler{
+			Client:         k8sManager.GetClient(),
+			MetalnetClient: k8sManager.GetClient(),
+			PartitionName:  partitionName,
+		}).SetupWithManager(k8sManager, k8sManager.GetCache())).To(Succeed())
+
+		Expect((&NetworkInterfaceReconciler{
+			Client:            k8sManager.GetClient(),
+			MetalnetClient:    k8sManager.GetClient(),
+			PartitionName:     partitionName,
+			MetalnetNamespace: metalnetNamespace,
+		}).SetupWithManager(k8sManager, k8sManager.GetCache())).To(Succeed())
+
+		Expect((&LoadBalancerInstanceReconciler{
+			Client:            k8sManager.GetClient(),
+			MetalnetClient:    k8sManager.GetClient(),
+			PartitionName:     partitionName,
+			MetalnetNamespace: metalnetNamespace,
+		}).SetupWithManager(k8sManager, k8sManager.GetCache())).To(Succeed())
+
+		Expect((&LoadBalancerInstanceSchedulerReconciler{
+			Client:         k8sManager.GetClient(),
+			EventRecorder:  &record.FakeRecorder{},
+			MetalnetClient: k8sManager.GetClient(),
+			Cache:          scheduler.NewCache(k8sManager.GetLogger(), scheduler.DefaultCacheStrategy),
+			PartitionName:  partitionName,
+		}).SetupWithManager(k8sManager)).To(Succeed())
+
+		return nil
+	}, []WaitFor{partitionReconciler}, WithTimeout(10*time.Second))).To(Succeed())
 
 	mgrCtx, cancel := context.WithCancel(context.Background())
 	DeferCleanup(cancel)
@@ -136,4 +192,55 @@ func SetupTest() *corev1.Namespace {
 	})
 
 	return ns
+}
+
+func DeleteIfExists(obj client.Object) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		return client.IgnoreNotFound(k8sClient.Delete(ctx, obj))
+	}
+}
+
+func SetupMetalnetNode() *corev1.Node {
+	node := &corev1.Node{}
+	BeforeEach(func(ctx SpecContext) {
+		*node = corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "node-",
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+
+		DeferCleanup(DeleteIfExists(node))
+	})
+	return node
+}
+
+func SetupNetwork(ns *corev1.Namespace, vni int32) *v1alpha1.Network {
+	network := &v1alpha1.Network{}
+
+	BeforeEach(func(ctx SpecContext) {
+		*network = v1alpha1.Network{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:    ns.Name,
+				GenerateName: "network-",
+			},
+			Spec: v1alpha1.NetworkSpec{
+				VNI: pointer.Int32(vni),
+			},
+		}
+		By("creating a network")
+		Expect(k8sClient.Create(ctx, network)).To(Succeed())
+
+		By("patching the network to be allocated")
+		Eventually(UpdateStatus(network, func() {
+			network.Status.Conditions = []v1alpha1.NetworkCondition{
+				{
+					Type:   v1alpha1.NetworkAllocated,
+					Status: corev1.ConditionTrue,
+				},
+			}
+		})).Should(Succeed())
+	})
+
+	return network
 }

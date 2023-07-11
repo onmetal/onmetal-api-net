@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
 
 var _ = Describe("NetworkController", func() {
@@ -30,13 +31,14 @@ var _ = Describe("NetworkController", func() {
 
 	It("should create a metalnet network for a network", func(ctx SpecContext) {
 		By("creating a network")
+		const vni = 300
 		network := &v1alpha1.Network{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
 				GenerateName: "network-",
 			},
 			Spec: v1alpha1.NetworkSpec{
-				VNI: pointer.Int32(300),
+				VNI: pointer.Int32(vni),
 			},
 		}
 		Expect(k8sClient.Create(ctx, network)).To(Succeed())
@@ -54,13 +56,16 @@ var _ = Describe("NetworkController", func() {
 		Expect(k8sClient.Status().Patch(ctx, network, client.MergeFrom(baseNetwork))).Should(Succeed())
 
 		By("waiting for the metalnet network to be created")
-		metalnetNetwork := &metalnetv1alpha1.Network{}
-		metalnetNetworkKey := client.ObjectKey{Name: "network-300"}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, metalnetNetworkKey, metalnetNetwork)).To(Succeed())
-			g.Expect(metalnetNetwork.Spec).To(Equal(metalnetv1alpha1.NetworkSpec{
-				ID: 300,
-			}))
-		}).Should(Succeed())
+		metalnetNetwork := &metalnetv1alpha1.Network{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: metalnetNamespace,
+				Name:      MetalnetNetworkName(vni),
+			},
+		}
+		Eventually(Object(metalnetNetwork)).Should(SatisfyAll(
+			HaveField("Spec", metalnetv1alpha1.NetworkSpec{
+				ID: vni,
+			}),
+		))
 	})
 })

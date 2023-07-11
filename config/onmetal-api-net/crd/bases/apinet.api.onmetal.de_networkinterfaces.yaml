@@ -66,28 +66,36 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               prefixes:
-                description: Prefixes specifies the additional IP prefixes for the
-                  network interface.
+                description: 'Prefixes specifies the additional IP prefixes for the
+                  network interface. TODO: Allow for ephemeral internal prefixes to
+                  be requested.'
                 items:
-                  properties:
-                    prefix:
-                      description: IPPrefix represents a network prefix.
-                      type: object
+                  description: IPPrefix represents a network prefix.
                   type: object
                 type: array
-              publicIPRefs:
-                description: PublicIPRefs are the public IPs for the network interface.
+              publicIPs:
+                description: PublicIPs specifies the public IPs for the network interface.
                 items:
                   properties:
                     ipFamily:
                       description: IPFamily is the IP family of the public IP.
                       type: string
-                    name:
-                      description: Name is the name of the public IP.
-                      type: string
+                    publicIPRef:
+                      description: PublicIPRef references the public IP to allocate.
+                        If empty or not present, this network interface is assumed
+                        to have an external process managing the allocation of public
+                        IPs (via PublicIP's claimerRef), which onmetal-api-net will
+                        not modify. Pointer to distinguish between empty and explicit
+                        zero.
+                      properties:
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Add other useful fields. apiVersion, kind, uid?'
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
                   required:
                   - ipFamily
-                  - name
                   type: object
                 type: array
             required:
@@ -129,6 +137,13 @@ spec:
                 description: IPs reports the current IPs of the network interface.
                 items:
                   type: string
+                type: array
+              prefixes:
+                description: Prefixes reports the current IPPrefixes of the network
+                  interface.
+                items:
+                  description: IPPrefix represents a network prefix.
+                  type: object
                 type: array
             type: object
         type: object

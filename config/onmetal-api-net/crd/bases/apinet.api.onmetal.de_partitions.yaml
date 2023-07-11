@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.12.0
-  name: nodes.apinet.api.onmetal.de
+  name: partitions.apinet.api.onmetal.de
 spec:
   group: apinet.api.onmetal.de
   names:
-    kind: Node
-    listKind: NodeList
-    plural: nodes
-    singular: node
+    kind: Partition
+    listKind: PartitionList
+    plural: partitions
+    singular: partition
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Node is the schema for the nodes API.
+        description: Partition is the schema for the partitions API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -32,19 +32,6 @@ spec:
           metadata:
             type: object
           spec:
-            properties:
-              partitionRef:
-                description: LocalObjectReference contains enough information to let
-                  you locate the referenced object inside the same namespace.
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
-            required:
-            - partitionRef
             type: object
           status:
             type: object

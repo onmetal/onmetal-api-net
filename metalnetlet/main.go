@@ -140,7 +140,7 @@ func main() {
 	if err := (&controllers.NetworkReconciler{
 		Client:          mgr.GetClient(),
 		MetalnetCluster: metalnetCluster,
-		Name:            name,
+		PartitionName:   name,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Networking")
 		os.Exit(1)

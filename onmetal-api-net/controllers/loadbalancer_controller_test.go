@@ -17,18 +17,32 @@ package controllers
 import (
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	"github.com/onmetal/onmetal-api-net/apiutils"
+	"github.com/onmetal/onmetal-api/utils/generic"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	cclient "sigs.k8s.io/controller-runtime/pkg/client"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
 
-var _ = Describe("LoadBalancerController", func() {
+var _ = FDescribe("LoadBalancerController", func() {
 	ns := SetupTest()
 	network := SetupNetwork(ns)
 
-	It("should reconcile the load balancer destinations", func(ctx SpecContext) {
+	It("should reconcile the load balancer destinations and instances", func(ctx SpecContext) {
+		const partitionCt = 3
+		By("creating multiple partitions")
+		for i := 0; i < partitionCt; i++ {
+			partition := &v1alpha1.Partition{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "partition-",
+				},
+			}
+			Expect(k8sClient.Create(ctx, partition)).To(Succeed())
+			DeferCleanup(DeleteIfExists(partition))
+		}
+
 		By("creating a public IP")
 		publicIP := &v1alpha1.PublicIP{
 			ObjectMeta: metav1.ObjectMeta{
@@ -109,5 +123,28 @@ var _ = Describe("LoadBalancerController", func() {
 				},
 			})),
 		))
+
+		By("waiting for the load balancer instances to be created")
+		loadBalancerInstanceList := &v1alpha1.LoadBalancerInstanceList{}
+		Eventually(ObjectList(loadBalancerInstanceList, cclient.InNamespace(ns.Name))).Should(
+			HaveField("Items", HaveLen(partitionCt)))
+
+		By("increasing the replicas per partition")
+		Eventually(Update(loadBalancer, func() {
+			loadBalancer.Spec.ReplicasPerPartition = generic.Pointer[int32](2)
+		})).Should(Succeed())
+
+		By("waiting for the load balancer instances to be created")
+		Eventually(ObjectList(loadBalancerInstanceList, cclient.InNamespace(ns.Name))).Should(
+			HaveField("Items", HaveLen(partitionCt*2)))
+
+		By("decreasing the replicas per partition")
+		Eventually(Update(loadBalancer, func() {
+			loadBalancer.Spec.ReplicasPerPartition = generic.Pointer[int32](1)
+		})).Should(Succeed())
+
+		By("waiting for the load balancer instances to be deleted")
+		Eventually(ObjectList(loadBalancerInstanceList, cclient.InNamespace(ns.Name))).Should(
+			HaveField("Items", HaveLen(partitionCt)))
 	})
 })

@@ -1,22 +1,20 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type NodeSpec struct {
-	Partition string `json:"partition"`
+	PartitionRef corev1.LocalObjectReference `json:"partitionRef"`
 }
 
 type NodeStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="IPFamily",type=string,JSONPath=`.spec.ipFamily`
-// +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
-// +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.conditions[?(@.type == "Allocated")].reason`
-// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Node is the schema for the nodes API.
 type Node struct {

@@ -168,6 +168,13 @@ spec:
                   - port
                   type: object
                 type: array
+              replicasPerPartition:
+                default: 1
+                description: ReplicasPerPartition specifies the number of replicas
+                  for a load balancer. Pointer to distinguish between zero and explicit
+                  zero.
+                format: int32
+                type: integer
               type:
                 description: Type specifies the type of load balancer.
                 type: string

@@ -152,7 +152,7 @@ func (r *NATGatewayAutoscalerReconciler) managePublicIPs(
 	natGateway *v1alpha1.NATGateway,
 	usedPublicIPs []v1alpha1.PublicIP,
 ) error {
-	nicCfgs, err := r.getNetworkInterfaceConfigsForNATGateway(ctx, natGateway)
+	nicCfgs, err := r.getNetworkInterfaceForNATGateway(ctx, natGateway)
 	if err != nil {
 		return err
 	}
@@ -194,21 +194,21 @@ func (r *NATGatewayAutoscalerReconciler) managePublicIPs(
 	return nil
 }
 
-func (r *NATGatewayAutoscalerReconciler) getNetworkInterfaceConfigsForNATGateway(ctx context.Context, natGateway *v1alpha1.NATGateway) ([]v1alpha1.NetworkInterfaceConfig, error) {
-	nicCfgList := &v1alpha1.NetworkInterfaceConfigList{}
-	if err := r.List(ctx, nicCfgList,
+func (r *NATGatewayAutoscalerReconciler) getNetworkInterfaceForNATGateway(ctx context.Context, natGateway *v1alpha1.NATGateway) ([]v1alpha1.NetworkInterface, error) {
+	nicList := &v1alpha1.NetworkInterfaceList{}
+	if err := r.List(ctx, nicList,
 		client.InNamespace(natGateway.Namespace),
 	); err != nil {
 		return nil, fmt.Errorf("error listing network interfaces: %w", err)
 	}
 
-	var nicCfgs []v1alpha1.NetworkInterfaceConfig
-	for _, nicCfg := range nicCfgList.Items {
-		if _, ok := natGatewaySelectsNetworkInterfaceConfig(natGateway, &nicCfg); ok {
-			nicCfgs = append(nicCfgs, nicCfg)
+	var nics []v1alpha1.NetworkInterface
+	for _, nic := range nicList.Items {
+		if natGatewaySelectsNetworkInterface(natGateway, &nic, natGateway.Status.IPs) {
+			nics = append(nics, nic)
 		}
 	}
-	return nicCfgs, nil
+	return nics, nil
 }
 
 func (r *NATGatewayAutoscalerReconciler) getPublicIPsForNATGateway(
@@ -414,11 +414,7 @@ func (r *NATGatewayAutoscalerReconciler) enqueueByNATGatewayOwnedPublicIPs() han
 			deletePublicIP(ctx, evt.Object, queue)
 		},
 		GenericFunc: func(ctx context.Context, evt event.GenericEvent, queue workqueue.RateLimitingInterface) {
-			if !evt.Object.GetDeletionTimestamp().IsZero() {
-				deletePublicIP(ctx, evt.Object, queue)
-			} else {
-				addPublicIP(ctx, evt.Object, queue)
-			}
+			addPublicIP(ctx, evt.Object, queue)
 		},
 	}
 }
@@ -439,11 +435,11 @@ func (r *NATGatewayAutoscalerReconciler) enqueueByNATGateway() handler.EventHand
 
 func (r *NATGatewayAutoscalerReconciler) enqueueByNetworkInterfaceConfig() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-		nicCfg := obj.(*v1alpha1.NetworkInterfaceConfig)
+		nic := obj.(*v1alpha1.NetworkInterface)
 
 		var reqs []ctrl.Request
-		for key := range r.Selectors.ReverseSelect(nicCfg.Network.Name) {
-			if key.Namespace != nicCfg.Namespace {
+		for key := range r.Selectors.ReverseSelect(nic.Spec.NetworkRef.Name) {
+			if key.Namespace != nic.Namespace {
 				continue
 			}
 
@@ -504,7 +500,7 @@ func (r *NATGatewayAutoscalerReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			r.enqueueByNATGatewayOwnedPublicIPs(),
 		).
 		Watches(
-			&v1alpha1.NetworkInterfaceConfig{},
+			&v1alpha1.NetworkInterface{},
 			r.enqueueByNetworkInterfaceConfig(),
 		).
 		Complete(r)

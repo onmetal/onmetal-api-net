@@ -29,20 +29,20 @@ type NetworkInterfaceSpec struct {
 	// TODO: Allow for ephemeral internal IPs to be requested.
 	IPs []IP `json:"ips"`
 	// Prefixes specifies the additional IP prefixes for the network interface.
-	Prefixes []NetworkInterfacePrefix `json:"prefixes,omitempty"`
-	// PublicIPRefs are the public IPs for the network interface.
-	PublicIPRefs []NetworkInterfacePublicIPRef `json:"publicIPRefs,omitempty"`
-}
-
-type NetworkInterfacePrefix struct {
-	Prefix *IPPrefix `json:"prefix,omitempty"`
+	// TODO: Allow for ephemeral internal prefixes to be requested.
+	Prefixes []IPPrefix `json:"prefixes,omitempty"`
+	// PublicIPs specifies the public IPs for the network interface.
+	PublicIPs []NetworkInterfacePublicIPRef `json:"publicIPs,omitempty"`
 }
 
 type NetworkInterfacePublicIPRef struct {
 	// IPFamily is the IP family of the public IP.
 	IPFamily corev1.IPFamily `json:"ipFamily"`
-	// Name is the name of the public IP.
-	Name string `json:"name"`
+	// PublicIPRef references the public IP to allocate.
+	// If empty or not present, this network interface is assumed to have an external process managing
+	// the allocation of public IPs (via PublicIP's claimerRef), which onmetal-api-net will not modify.
+	// Pointer to distinguish between empty and explicit zero.
+	PublicIPRef *corev1.LocalObjectReference `json:"publicIPRef,omitempty"`
 }
 
 type ExternalIP struct {
@@ -73,6 +73,8 @@ type SourceRef struct {
 type NetworkInterfaceStatus struct {
 	// IPs reports the current IPs of the network interface.
 	IPs []IP `json:"ips,omitempty"`
+	// Prefixes reports the current IPPrefixes of the network interface.
+	Prefixes []IPPrefix `json:"prefixes,omitempty"`
 	// ExternalIPs specifies the currently allocated external IPs.
 	ExternalIPs []ExternalIP `json:"externalIPs,omitempty"`
 }

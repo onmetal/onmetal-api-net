@@ -19,6 +19,11 @@ type LoadBalancerSpec struct {
 	// NetworkRef references the network the load balancer is part of.
 	NetworkRef corev1.LocalObjectReference `json:"networkRef"`
 
+	// ReplicasPerPartition specifies the number of replicas for a load balancer.
+	// Pointer to distinguish between zero and explicit zero.
+	// +kubebuilder:default=1
+	ReplicasPerPartition *int32 `json:"replicasPerPartition,omitempty"`
+
 	// IPSelector selects the IPs to allocate for the load balancer.
 	// If empty or not present, this load balancer is assumed to have an external process claiming
 	// public IPs, which onmetal-api-net will not modify.

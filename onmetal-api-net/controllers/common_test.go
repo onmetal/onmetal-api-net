@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"context"
+
 	"github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	"github.com/onmetal/onmetal-api-net/apiutils"
 	. "github.com/onsi/ginkgo/v2"
@@ -37,4 +39,10 @@ func BeControlledBy(owner client.Object) types.GomegaMatcher {
 	return gcustom.MakeMatcher(func(obj client.Object) (bool, error) {
 		return metav1.IsControlledBy(obj, owner), nil
 	}).WithTemplate("Expected\n{{ .FormattedActual}}\n{{.To}} be owned by \n{{format .Data 1}}", owner)
+}
+
+func DeleteIfExists(obj client.Object) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		return client.IgnoreNotFound(k8sClient.Delete(ctx, obj))
+	}
 }

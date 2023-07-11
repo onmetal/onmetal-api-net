@@ -4,21 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.12.0
-  name: loadbalancerroutings.apinet.api.onmetal.de
+  name: natgatewayroutings.apinet.api.onmetal.de
 spec:
   group: apinet.api.onmetal.de
   names:
-    kind: LoadBalancerRouting
-    listKind: LoadBalancerRoutingList
-    plural: loadbalancerroutings
-    singular: loadbalancerrouting
+    kind: NATGatewayRouting
+    listKind: NATGatewayRoutingList
+    plural: natgatewayroutings
+    singular: natgatewayrouting
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: LoadBalancerRouting is the schema for the loadbalancerroutings
-          API.
+        description: NATGatewayRouting is the schema for the natgatewayroutings API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -30,6 +29,25 @@ spec:
               properties:
                 name:
                   type: string
+                natIP:
+                  description: NATIP is a NATed IP.
+                  properties:
+                    endPort:
+                      description: EndPort is the last port to use.
+                      format: int32
+                      type: integer
+                    ip:
+                      description: IP is the NATed IP to use.
+                      type: string
+                    port:
+                      description: Port is the first port to use.
+                      format: int32
+                      type: integer
+                  required:
+                  - endPort
+                  - ip
+                  - port
+                  type: object
                 nodeRef:
                   description: NodeRef references the node the destination network
                     interface is on.
@@ -48,10 +66,15 @@ spec:
                   type: string
               required:
               - name
+              - natIP
               - nodeRef
               - uid
               type: object
             type: array
+          ipFamily:
+            description: IPFamily represents the IP Family (IPv4 or IPv6). This type
+              is used to express the family of an IP expressed by a type (e.g. service.spec.ipFamilies).
+            type: string
           ips:
             description: IPs are the IPs the routing is for.
             items:
@@ -64,6 +87,8 @@ spec:
             type: string
           metadata:
             type: object
+        required:
+        - ipFamily
         type: object
     served: true
     storage: true

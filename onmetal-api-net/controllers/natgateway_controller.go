@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -35,47 +36,18 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			return ctrl.Result{}, err
 		}
 
-		conflict, err := r.deleteNetworkInterfaceConfigNATIPsByNATGatewayKey(ctx, log, req.NamespacedName)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("error deleting network interface config NAT IPs by NAT gateway key: %w", err)
+		natGatewayRouting := &v1alpha1.NATGatewayRouting{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: req.Namespace,
+				Name:      req.Name,
+			},
 		}
-		if conflict {
-			return ctrl.Result{Requeue: true}, nil
+		if err := r.Delete(ctx, natGatewayRouting); client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, fmt.Errorf("error deleting NAT gateway routing: %w", err)
 		}
 		return ctrl.Result{}, nil
 	}
 	return r.reconcileExists(ctx, log, natGateway)
-}
-
-func (r *NATGatewayReconciler) deleteNetworkInterfaceConfigNATIPsByNATGatewayKey(ctx context.Context, log logr.Logger, key client.ObjectKey) (conflict bool, err error) {
-	nicCfgList := &v1alpha1.NetworkInterfaceConfigList{}
-	if err := r.List(ctx, nicCfgList,
-		client.InNamespace(key.Namespace),
-	); err != nil {
-		return false, fmt.Errorf("error listing network interface configs: %w", err)
-	}
-
-	var (
-		errs []error
-	)
-	for _, nicCfg := range nicCfgList.Items {
-		idx := externalIPConfigIndexBySourceKindAndName(nicCfg.ExternalIPs, natGatewayKind, key.Name)
-		if idx < 0 {
-			continue
-		}
-
-		log.V(2).Info("Deleting network interface config NAT IP")
-		if err := r.deleteNetworkInterfaceConfigNATIP(ctx, &nicCfg, idx); err != nil {
-			switch {
-			case apierrors.IsNotFound(err):
-			case apierrors.IsConflict(err):
-				conflict = true
-			default:
-				errs = append(errs, err)
-			}
-		}
-	}
-	return conflict, errors.Join(errs...)
 }
 
 func (r *NATGatewayReconciler) reconcileExists(ctx context.Context, log logr.Logger, natGateway *v1alpha1.NATGateway) (ctrl.Result, error) {
@@ -159,100 +131,63 @@ func (r *NATGatewayReconciler) getAndManagePublicIPsForNATGateway(ctx context.Co
 	return ips, errors.Join(errs...)
 }
 
-func networkInterfaceConfigHasIPFamily(cfg *v1alpha1.NetworkInterfaceConfig, ipFamily corev1.IPFamily) bool {
-	for _, ip := range cfg.IPs {
-		if ip.Family() == ipFamily {
-			return true
-		}
-	}
-	return false
-}
-
-func natGatewaySelectsNetworkInterfaceConfig(natGateway *v1alpha1.NATGateway, nicCfg *v1alpha1.NetworkInterfaceConfig) (reportsAllocated, ok bool) {
-	if nicCfg.Network.Name != natGateway.Spec.NetworkRef.Name {
+func natGatewaySelectsNetworkInterface(natGateway *v1alpha1.NATGateway, nic *v1alpha1.NetworkInterface, ips []v1alpha1.IP) bool {
+	if natGateway.Spec.NetworkRef != nic.Spec.NetworkRef {
 		// Don't include network interfaces from different networks.
-		return false, false
+		return false
 	}
 
-	if !networkInterfaceConfigHasIPFamily(nicCfg, natGateway.Spec.IPFamily) {
+	hasIPFamily := slices.ContainsFunc(nic.Spec.IPs, func(ip v1alpha1.IP) bool {
+		return ip.Family() == natGateway.Spec.IPFamily
+	})
+	if !hasIPFamily {
 		// Don't include network interfaces that don't share an IP family with the NAT gateway.
-		return false, false
+		return false
 	}
 
-	if extIP := findExternalIPConfigByIPFamily(nicCfg.ExternalIPs, natGateway.Spec.IPFamily); extIP != nil {
-		switch {
-		case extIP.PublicIP != nil:
-			// Don't include network interfaces that have a public IP for the IP family.
-			return false, false
-		case extIP.NATIP != nil:
-			if extIP.SourceRef != nil && extIP.SourceRef.UID != natGateway.UID {
-				// Don't include network interfaces that have a NAT IP from a different NAT gateway.
-				return false, false
-			}
-
-			return true, true
-		default:
-			return false, false
+	for _, publicIP := range nic.Spec.PublicIPs {
+		if publicIP.IPFamily == natGateway.Spec.IPFamily {
+			// Don't include network interfaces that want to allocate a public IP for the IP family.
+			return false
 		}
 	}
 
-	if !nicCfg.DeletionTimestamp.IsZero() {
-		// Don't allocate network interface configs that are already deleting.
-		return false, false
+	for _, extIP := range nic.Status.ExternalIPs {
+		if natIP := extIP.NATIP; natIP != nil {
+			if natIP.IP.Family() == natGateway.Spec.IPFamily {
+				if slices.Contains(ips, natIP.IP) {
+					// If the NAT IP is already allocated, it's a target regardless of deletion or not.
+					return true
+				}
+				// Different NAT IP, don't include.
+				return false
+			}
+		}
 	}
-	return false, true
+
+	if !nic.DeletionTimestamp.IsZero() {
+		// Don't allocate new network interfaces that are already deleting.
+		return false
+	}
+	return true
 }
 
-func (r *NATGatewayReconciler) getNATGatewayTargets(ctx context.Context, natGateway *v1alpha1.NATGateway) (reportBound, newTargets []v1alpha1.NetworkInterfaceConfig, err error) {
-	nicCfgList := &v1alpha1.NetworkInterfaceConfigList{}
-	if err := r.List(ctx, nicCfgList,
+func (r *NATGatewayReconciler) getNATGatewayTargets(ctx context.Context, natGateway *v1alpha1.NATGateway, ips []v1alpha1.IP) (map[types.UID]*v1alpha1.NetworkInterface, error) {
+	nicList := &v1alpha1.NetworkInterfaceList{}
+	if err := r.List(ctx, nicList,
 		client.InNamespace(natGateway.Namespace),
 	); err != nil {
-		return nil, nil, fmt.Errorf("error listing network interfaces: %w", err)
+		return nil, fmt.Errorf("error listing network interfaces: %w", err)
 	}
 
-	for _, nicCfg := range nicCfgList.Items {
-		alloc, ok := natGatewaySelectsNetworkInterfaceConfig(natGateway, &nicCfg)
-		if !ok {
-			continue
-		}
-
-		if alloc {
-			reportBound = append(reportBound, nicCfg)
-		} else {
-			newTargets = append(newTargets, nicCfg)
+	nicNameByUID := make(map[types.UID]*v1alpha1.NetworkInterface)
+	for i := range nicList.Items {
+		nic := &nicList.Items[i]
+		if natGatewaySelectsNetworkInterface(natGateway, nic, ips) {
+			nicNameByUID[nic.UID] = nic
 		}
 	}
-	return reportBound, newTargets, nil
-}
-
-func (r *NATGatewayReconciler) deleteNetworkInterfaceConfigNATIP(ctx context.Context, nicCfg *v1alpha1.NetworkInterfaceConfig, idx int) error {
-	base := nicCfg.DeepCopy()
-	nicCfg.ExternalIPs = slices.Delete(nicCfg.ExternalIPs, idx, idx+1)
-	if err := r.Patch(ctx, nicCfg, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("error patching network interface config: %w", err)
-	}
-	return nil
-}
-
-func (r *NATGatewayReconciler) addNetworkInterfaceConfigNATIP(ctx context.Context, natGateway *v1alpha1.NATGateway, nicCfg *v1alpha1.NetworkInterfaceConfig, natIP v1alpha1.NATIP) error {
-	base := nicCfg.DeepCopy()
-	nicCfg.ExternalIPs = append(nicCfg.ExternalIPs, v1alpha1.ExternalIPConfig{
-		IPFamily: natGateway.Spec.IPFamily,
-		SourceRef: &v1alpha1.SourceRef{
-			Kind: natGatewayKind,
-			Name: natGateway.Name,
-			UID:  natGateway.UID,
-		},
-		NATIP: &natIP,
-	})
-	slices.SortFunc(nicCfg.ExternalIPs, func(cfg1, cfg2 v1alpha1.ExternalIPConfig) bool {
-		return cfg1.IPFamily < cfg2.IPFamily
-	})
-	if err := r.Patch(ctx, nicCfg, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("error patching network interface config: %w", err)
-	}
-	return nil
+	return nicNameByUID, nil
 }
 
 func (r *NATGatewayReconciler) allocateNATGatewayDestinations(
@@ -260,40 +195,41 @@ func (r *NATGatewayReconciler) allocateNATGatewayDestinations(
 	log logr.Logger,
 	natGateway *v1alpha1.NATGateway,
 	ips []v1alpha1.IP,
-	reportBound, newTargets []v1alpha1.NetworkInterfaceConfig,
+	nicByUID map[types.UID]*v1alpha1.NetworkInterface,
 ) (int64, error) {
+	natGatewayRouting := &v1alpha1.NATGatewayRouting{}
+	natGatewayRoutingKey := client.ObjectKeyFromObject(natGateway)
+	if err := r.Get(ctx, natGatewayRoutingKey, natGatewayRouting); client.IgnoreNotFound(err) != nil {
+		return 0, fmt.Errorf("error getting NAT gateway routing: %w", err)
+	}
+
 	var (
-		allocMgr = natgateway.NewAllocationManager(natGateway.Spec.PortsPerNetworkInterface, ips)
-		errs     []error
+		allocMgr        = natgateway.NewAllocationManager(natGateway.Spec.PortsPerNetworkInterface, ips)
+		newDestinations []v1alpha1.NATGatewayDestination
 	)
 
 	log.V(1).Info("Determining NAT IPs to keep")
-	for _, nicCfg := range reportBound {
-		idx := externalIPConfigIndexBySourceUID(nicCfg.ExternalIPs, natGateway.UID)
-		natIP := nicCfg.ExternalIPs[idx].NATIP
-		log := log.WithValues("NetworkInterfaceKey", client.ObjectKeyFromObject(&nicCfg), "NATIP", natIP)
-
-		if allocMgr.Use(natIP.IP, natIP.Port, natIP.EndPort) {
-			log.V(2).Info("Keeping NAT IP allocation")
+	for _, dst := range natGatewayRouting.Destinations {
+		log := log.WithValues("Destination", dst)
+		_, ok := nicByUID[dst.UID]
+		if !ok {
+			log.V(2).Info("Dropping non-selected destination")
 			continue
 		}
 
-		log.V(2).Info("Deleting NAT IP that could not be kept")
-		if err := r.deleteNetworkInterfaceConfigNATIP(ctx, &nicCfg, idx); err != nil {
-			if !apierrors.IsNotFound(err) {
-				errs = append(errs, err)
-			}
+		if !allocMgr.Use(dst.NATIP.IP, dst.NATIP.Port, dst.NATIP.EndPort) {
+			log.V(2).Info("Dropping non-available destination")
 			continue
 		}
 
-		log.V(2).Info("Adding network interface config for re-allocation")
-		newTargets = append(newTargets, nicCfg)
+		log.V(2).Info("Re-using destination")
+		newDestinations = append(newDestinations, dst)
+		delete(nicByUID, dst.UID)
 	}
 
-	log.V(1).Info("Computing new NAT IPs")
-	for _, nicCfg := range newTargets {
-		log := log.WithValues("NetworkInterfaceKey", client.ObjectKeyFromObject(&nicCfg))
-
+	log.V(1).Info("Determining new NAT IPs")
+	for uid, nic := range nicByUID {
+		log := log.WithValues("NetworkInterface", nic)
 		ip, port, endPort, ok := allocMgr.UseNextFree()
 		if !ok {
 			log.V(2).Info("No free NAT IPs available anymore")
@@ -301,59 +237,43 @@ func (r *NATGatewayReconciler) allocateNATGatewayDestinations(
 			break
 		}
 
-		natIP := v1alpha1.NATIP{IP: ip, Port: port, EndPort: endPort}
-		log.V(2).Info("Adding NAT IP", "NATIP", natIP)
-		if err := r.addNetworkInterfaceConfigNATIP(ctx, natGateway, &nicCfg, natIP); err != nil {
-			errs = append(errs, err)
-		}
+		newDestinations = append(newDestinations, v1alpha1.NATGatewayDestination{
+			Name: nic.Name,
+			UID:  uid,
+			NATIP: v1alpha1.NATIP{
+				IP:      ip,
+				Port:    port,
+				EndPort: endPort,
+			},
+			NodeRef: nic.Spec.NodeRef,
+		})
 	}
 
-	return allocMgr.Used(), errors.Join(errs...)
-}
+	slices.SortFunc(newDestinations, func(a, b v1alpha1.NATGatewayDestination) bool {
+		return a.UID < b.UID
+	})
 
-func (r *NATGatewayReconciler) deleteNetworkInterfaceConfigNATIPsForNATGateway(ctx context.Context, log logr.Logger, natGateway *v1alpha1.NATGateway) (conflict bool, err error) {
-	nicCfgList := &v1alpha1.NetworkInterfaceConfigList{}
-	if err := r.List(ctx, nicCfgList,
-		client.InNamespace(natGateway.Namespace),
-	); err != nil {
-		return false, fmt.Errorf("error listing network interface configs: %w", err)
+	log.V(1).Info("Applying NAT gateway routing")
+	natGatewayRouting = &v1alpha1.NATGatewayRouting{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: v1alpha1.GroupVersion.String(),
+			Kind:       natGatewayRoutingKind,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: natGateway.Namespace,
+			Name:      natGateway.Name,
+		},
+		Destinations: newDestinations,
 	}
-
-	var (
-		errs []error
-	)
-	for _, nicCfg := range nicCfgList.Items {
-		idx := externalIPConfigIndexBySourceUID(nicCfg.ExternalIPs, natGateway.UID)
-		if idx < 0 {
-			continue
-		}
-
-		log.V(2).Info("Deleting network interface config NAT IP")
-		if err := r.deleteNetworkInterfaceConfigNATIP(ctx, &nicCfg, idx); err != nil {
-			switch {
-			case apierrors.IsNotFound(err):
-			case apierrors.IsConflict(err):
-				conflict = true
-			default:
-				errs = append(errs, err)
-			}
-		}
+	_ = ctrl.SetControllerReference(natGateway, natGatewayRouting, r.Scheme())
+	if err := r.Patch(ctx, natGatewayRouting, client.Apply, fieldOwner, client.ForceOwnership); err != nil {
+		return 0, fmt.Errorf("error applying NAT gateway routing: %w", err)
 	}
-	return conflict, errors.Join(errs...)
+	return allocMgr.Used(), nil
 }
 
 func (r *NATGatewayReconciler) delete(ctx context.Context, log logr.Logger, natGateway *v1alpha1.NATGateway) (ctrl.Result, error) {
 	log.V(1).Info("Delete")
-
-	log.V(1).Info("Deleting network interface configs NAT IPs by NAT gateway")
-	conflict, err := r.deleteNetworkInterfaceConfigNATIPsForNATGateway(ctx, log, natGateway)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error deleting network interface config NAT IPs: %w", err)
-	}
-	if conflict {
-		return ctrl.Result{Requeue: true}, nil
-	}
-
 	log.V(1).Info("Deleted")
 	return ctrl.Result{}, nil
 }
@@ -410,13 +330,13 @@ func (r *NATGatewayReconciler) reconcile(ctx context.Context, log logr.Logger, n
 	}
 
 	log.V(1).Info("Getting network interfaces for NAT gateway")
-	reportBound, newTargets, err := r.getNATGatewayTargets(ctx, natGateway)
+	nicByUID, err := r.getNATGatewayTargets(ctx, natGateway, ips)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error getting NAT gateway targets: %w", err)
 	}
 
 	log.V(1).Info("Allocating NAT gateway destinations")
-	usedNATIPs, err := r.allocateNATGatewayDestinations(ctx, log, natGateway, ips, reportBound, newTargets)
+	usedNATIPs, err := r.allocateNATGatewayDestinations(ctx, log, natGateway, ips, nicByUID)
 	if err != nil {
 		if !apierrors.IsConflict(err) {
 			return ctrl.Result{}, fmt.Errorf("error allocating network interfaces: %w", err)
@@ -469,33 +389,14 @@ func (r *NATGatewayReconciler) enqueueByPublicIPNATGatewaySelection() handler.Ev
 	})
 }
 
-func (r *NATGatewayReconciler) enqueueByNetworkInterfaceConfigNATIPSourceRef() handler.EventHandler {
+func (r *NATGatewayReconciler) enqueueByNetworkInterfaceNATGatewaySelection() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-		nicCfg := obj.(*v1alpha1.NetworkInterfaceConfig)
-
-		var reqs []ctrl.Request
-		for _, extIP := range nicCfg.ExternalIPs {
-			if extIP.NATIP == nil || extIP.SourceRef == nil {
-				continue
-			}
-
-			reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKey{
-				Namespace: nicCfg.Namespace,
-				Name:      nicCfg.Name,
-			}})
-		}
-		return reqs
-	})
-}
-
-func (r *NATGatewayReconciler) enqueueByNetworkInterfaceConfigNATGatewaySelection() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
-		nicCfg := obj.(*v1alpha1.NetworkInterfaceConfig)
+		nic := obj.(*v1alpha1.NetworkInterface)
 		log := ctrl.LoggerFrom(ctx)
 
 		natGatewayList := &v1alpha1.NATGatewayList{}
 		if err := r.List(ctx, natGatewayList,
-			client.InNamespace(nicCfg.Namespace),
+			client.InNamespace(nic.Namespace),
 		); err != nil {
 			log.Error(err, "Error listing NAT gateways")
 			return nil
@@ -503,7 +404,7 @@ func (r *NATGatewayReconciler) enqueueByNetworkInterfaceConfigNATGatewaySelectio
 
 		var reqs []ctrl.Request
 		for _, natGateway := range natGatewayList.Items {
-			if _, ok := natGatewaySelectsNetworkInterfaceConfig(&natGateway, nicCfg); ok {
+			if natGatewaySelectsNetworkInterface(&natGateway, nic, natGateway.Status.IPs) {
 				reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&natGateway)})
 			}
 		}
@@ -514,6 +415,7 @@ func (r *NATGatewayReconciler) enqueueByNetworkInterfaceConfigNATGatewaySelectio
 func (r *NATGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.NATGateway{}).
+		Owns(&v1alpha1.NATGatewayRouting{}).
 		Watches(
 			&v1alpha1.PublicIP{},
 			enqueueByPublicIPClaimerRef(natGatewayKind),
@@ -524,12 +426,8 @@ func (r *NATGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(publicIPClaimablePredicate),
 		).
 		Watches(
-			&v1alpha1.NetworkInterfaceConfig{},
-			r.enqueueByNetworkInterfaceConfigNATIPSourceRef(),
-		).
-		Watches(
-			&v1alpha1.NetworkInterfaceConfig{},
-			r.enqueueByNetworkInterfaceConfigNATGatewaySelection(),
+			&v1alpha1.NetworkInterface{},
+			r.enqueueByNetworkInterfaceNATGatewaySelection(),
 		).
 		Complete(r)
 }

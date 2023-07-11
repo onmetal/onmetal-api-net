@@ -139,12 +139,9 @@ var _ = BeforeSuite(func() {
 		EventRecorder: &record.FakeRecorder{},
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
-	Expect((&NetworkInterfaceReconciler{
-		Client: k8sManager.GetClient(),
-	}).SetupWithManager(k8sManager)).To(Succeed())
-
 	Expect((&LoadBalancerReconciler{
-		Client: k8sManager.GetClient(),
+		Client:       k8sManager.GetClient(),
+		Expectations: expectations.New(),
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&CertificateApprovalReconciler{

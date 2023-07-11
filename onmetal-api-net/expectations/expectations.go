@@ -92,6 +92,17 @@ func (e *Expectations) ExpectCreations(ctrlKey client.ObjectKey, createdKeys []c
 	}
 }
 
+func (e *Expectations) ExpectCreationsAndDeletions(ctrlKey client.ObjectKey, createdKeys, deletedKeys []client.ObjectKey) {
+	e.entriesMu.Lock(ctrlKey)
+	defer e.entriesMu.Unlock(ctrlKey)
+
+	e.entries[ctrlKey] = &expectation{
+		timestamp: time.Now(),
+		create:    sets.New(createdKeys...),
+		delete:    sets.New(deletedKeys...),
+	}
+}
+
 func (e *Expectations) CreationObserved(ctrlKey, createdKey client.ObjectKey) {
 	e.entriesMu.Lock(ctrlKey)
 	defer e.entriesMu.Unlock(ctrlKey)

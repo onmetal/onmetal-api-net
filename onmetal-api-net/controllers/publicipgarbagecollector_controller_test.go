@@ -53,27 +53,32 @@ var _ = Describe("PublicIPGarbageCollectorController", func() {
 	})
 
 	It("should release a public IP whose owner got deleted", func(ctx SpecContext) {
-		By("creating a network interface")
-		nic := &v1alpha1.NetworkInterface{
+		By("creating a load balancer")
+		lb := &v1alpha1.LoadBalancer{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
-				GenerateName: "nic-",
+				GenerateName: "lb-",
 			},
-			Spec: v1alpha1.NetworkInterfaceSpec{
+			Spec: v1alpha1.LoadBalancerSpec{
+				Type:       v1alpha1.LoadBalancerTypePublic,
 				NetworkRef: corev1.LocalObjectReference{Name: network.Name},
-				IPs: []v1alpha1.IP{
-					v1alpha1.MustParseIP("10.0.0.1"),
+				IPSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"foo": "bar",
+					},
 				},
-				NodeRef: corev1.LocalObjectReference{Name: "my-node"},
 			},
 		}
-		Expect(k8sClient.Create(ctx, nic)).To(Succeed())
+		Expect(k8sClient.Create(ctx, lb)).To(Succeed())
 
 		By("creating a public ip")
 		publicIP := &v1alpha1.PublicIP{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    ns.Name,
 				GenerateName: "public-ip-",
+				Labels: map[string]string{
+					"foo": "bar",
+				},
 			},
 			Spec: v1alpha1.PublicIPSpec{
 				IPFamily: corev1.IPv4Protocol,
@@ -86,28 +91,18 @@ var _ = Describe("PublicIPGarbageCollectorController", func() {
 		}
 		Expect(k8sClient.Create(ctx, publicIP)).To(Succeed())
 
-		By("modifying the network interface to claim the public IP")
-		Eventually(Update(nic, func() {
-			nic.Spec.PublicIPRefs = []v1alpha1.NetworkInterfacePublicIPRef{
-				{
-					IPFamily: corev1.IPv4Protocol,
-					Name:     publicIP.Name,
-				},
-			}
-		})).Should(Succeed())
-
 		By("waiting for the public ip to be allocated")
 		Eventually(Object(publicIP)).Should(HaveField("Spec.ClaimerRef", &v1alpha1.PublicIPClaimerRef{
-			Kind: networkInterfaceKind,
-			Name: nic.Name,
-			UID:  nic.UID,
+			Kind: loadBalancerKind,
+			Name: lb.Name,
+			UID:  lb.UID,
 		}))
 
-		By("deleting the network interface")
-		Expect(k8sClient.Delete(ctx, nic)).To(Succeed())
+		By("deleting the load balancer")
+		Expect(k8sClient.Delete(ctx, lb)).To(Succeed())
 
-		By("waiting for the network interface to be gone")
-		Eventually(Get(nic)).Should(Satisfy(apierrors.IsNotFound))
+		By("waiting for the load balancer to be gone")
+		Eventually(Get(lb)).Should(Satisfy(apierrors.IsNotFound))
 
 		By("waiting for the public ip to be released")
 		Eventually(Object(publicIP)).Should(HaveField("Spec.ClaimerRef", BeNil()))
