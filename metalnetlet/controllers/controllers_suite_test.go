@@ -155,11 +155,14 @@ var _ = BeforeSuite(func() {
 			MetalnetNamespace: metalnetNamespace,
 		}).SetupWithManager(k8sManager, k8sManager.GetCache())).To(Succeed())
 
+		schedulerCache := scheduler.NewCache(k8sManager.GetLogger(), scheduler.DefaultCacheStrategy)
+		Expect(k8sManager.Add(schedulerCache)).To(Succeed())
+
 		Expect((&LoadBalancerInstanceSchedulerReconciler{
 			Client:         k8sManager.GetClient(),
 			EventRecorder:  &record.FakeRecorder{},
 			MetalnetClient: k8sManager.GetClient(),
-			Cache:          scheduler.NewCache(k8sManager.GetLogger(), scheduler.DefaultCacheStrategy),
+			Cache:          schedulerCache,
 			PartitionName:  partitionName,
 		}).SetupWithManager(k8sManager)).To(Succeed())
 

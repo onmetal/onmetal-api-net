@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -109,7 +110,7 @@ func (r *LoadBalancerInstanceSchedulerReconciler) reconcileExists(
 
 func (r *LoadBalancerInstanceSchedulerReconciler) assume(assumed *v1alpha1.LoadBalancerInstance, nodeName string) error {
 	assumed.Spec.NodeRef = &corev1.LocalObjectReference{Name: nodeName}
-	if err := r.Cache.AssumeInstance(assumed); err != nil {
+	if err := r.Cache.AssumeInstance(assumed.DeepCopy()); err != nil {
 		return err
 	}
 	return nil
@@ -138,21 +139,21 @@ func (r *LoadBalancerInstanceSchedulerReconciler) bind(ctx context.Context, log 
 	return nil
 }
 
-func (r *LoadBalancerInstanceSchedulerReconciler) isInstanceOnPartition() predicate.Predicate {
+func (r *LoadBalancerInstanceSchedulerReconciler) instanceOnPartitionPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		instance := obj.(*v1alpha1.LoadBalancerInstance)
 		return instance.Spec.PartitionRef.Name == r.PartitionName
 	})
 }
 
-func (r *LoadBalancerInstanceSchedulerReconciler) isInstanceNotAssigned() predicate.Predicate {
+func (r *LoadBalancerInstanceSchedulerReconciler) instanceNotAssignedPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		instance := obj.(*v1alpha1.LoadBalancerInstance)
 		return instance.Spec.NodeRef == nil
 	})
 }
 
-func (r *LoadBalancerInstanceSchedulerReconciler) isNodeFromPartition() predicate.Predicate {
+func (r *LoadBalancerInstanceSchedulerReconciler) nodeFromPartitionPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		node := obj.(*v1alpha1.Node)
 		return node.Spec.PartitionRef.Name == r.PartitionName
@@ -226,8 +227,17 @@ func (r *LoadBalancerInstanceSchedulerReconciler) handleAssignedInstances() hand
 			newInstance := evt.ObjectNew.(*v1alpha1.LoadBalancerInstance)
 			log := ctrl.LoggerFrom(ctx)
 
-			if err := r.Cache.UpdateInstance(oldInstance, newInstance); err != nil {
-				log.Error(err, "Error updating instance in cache")
+			// Only add or update are possible - node updates are not allowed by admission.
+			oldInstanceAssigned := oldInstance.Spec.NodeRef != nil
+			newInstanceAssigned := newInstance.Spec.NodeRef != nil
+			if oldInstanceAssigned && !newInstanceAssigned {
+				if err := r.Cache.AddInstance(newInstance); err != nil {
+					log.Error(err, "Error adding instance to cache")
+				}
+			} else {
+				if err := r.Cache.UpdateInstance(oldInstance, newInstance); err != nil {
+					log.Error(err, "Error updating instance in cache")
+				}
 			}
 		},
 		DeleteFunc: func(ctx context.Context, evt event.DeleteEvent, queue workqueue.RateLimitingInterface) {
@@ -241,6 +251,34 @@ func (r *LoadBalancerInstanceSchedulerReconciler) handleAssignedInstances() hand
 	}
 }
 
+func (r *LoadBalancerInstanceSchedulerReconciler) handleUnassignedInstance() handler.EventHandler {
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, evt event.CreateEvent, queue workqueue.RateLimitingInterface) {
+			instance := evt.Object.(*v1alpha1.LoadBalancerInstance)
+			queue.Add(ctrl.Request{NamespacedName: client.ObjectKeyFromObject(instance)})
+		},
+		UpdateFunc: func(ctx context.Context, evt event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+			oldInstance := evt.ObjectOld.(*v1alpha1.LoadBalancerInstance)
+			newInstance := evt.ObjectNew.(*v1alpha1.LoadBalancerInstance)
+			log := ctrl.LoggerFrom(ctx)
+
+			if oldInstance.ResourceVersion == newInstance.ResourceVersion {
+				return
+			}
+
+			isAssumed, err := r.Cache.IsAssumedInstance(newInstance)
+			if err != nil {
+				log.Error(err, "Error checking whether instance is assumed", "Instance", klog.KObj(newInstance))
+			}
+			if isAssumed {
+				return
+			}
+
+			queue.Add(ctrl.Request{NamespacedName: client.ObjectKeyFromObject(newInstance)})
+		},
+	}
+}
+
 func (r *LoadBalancerInstanceSchedulerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(controller.Options{
@@ -248,25 +286,26 @@ func (r *LoadBalancerInstanceSchedulerReconciler) SetupWithManager(mgr ctrl.Mana
 			MaxConcurrentReconciles: 1,
 		}).
 		Named("loadbalancerinstance-scheduler").
-		For(
+		Watches(
 			&v1alpha1.LoadBalancerInstance{},
+			r.handleUnassignedInstance(),
 			builder.WithPredicates(
-				r.isInstanceOnPartition(),
-				r.isInstanceNotAssigned(),
+				r.instanceOnPartitionPredicate(),
+				r.instanceNotAssignedPredicate(),
 			),
 		).
 		Watches(
 			&v1alpha1.LoadBalancerInstance{},
 			r.handleAssignedInstances(),
 			builder.WithPredicates(
-				r.isInstanceOnPartition(),
+				r.instanceOnPartitionPredicate(),
 				r.isInstanceAssigned(),
 			),
 		).
 		Watches(
 			&v1alpha1.Node{},
 			r.handleNode(),
-			builder.WithPredicates(r.isNodeFromPartition()),
+			builder.WithPredicates(r.nodeFromPartitionPredicate()),
 		).
 		Complete(r)
 }

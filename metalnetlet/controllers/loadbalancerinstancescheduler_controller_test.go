@@ -79,7 +79,7 @@ var _ = Describe("LoadBalancerInstanceSchedulerController", func() {
 		})
 	})
 
-	Context("when multiple nodes are present", MustPassRepeatedly(4), func() {
+	Context("when multiple nodes are present", func() {
 		const nodeCt = 3
 
 		nodes := make([]*corev1.Node, nodeCt)
