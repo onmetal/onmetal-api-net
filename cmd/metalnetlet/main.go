@@ -181,7 +181,7 @@ func main() {
 		PartitionName:     name,
 		MetalnetNamespace: metalnetNamespace,
 	}).SetupWithManager(mgr, metalnetCluster.GetCache()); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Network")
+		setupLog.Error(err, "unable to create controller", "controller", "NetworkInterface")
 		os.Exit(1)
 	}
 

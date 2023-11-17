@@ -14,6 +14,8 @@
 
 package v1alpha1
 
+import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 const (
 	ReconcileRequestAnnotation = "reconcile.apinet.api.onmetal.de/requestedAt"
 
@@ -38,4 +40,12 @@ func APINetletCommonName(name string) string {
 // MetalnetletCommonName constructs the common name for a certificate of a metalnetlet user.
 func MetalnetletCommonName(name string) string {
 	return MetalnetletUserNamePrefix + name
+}
+
+// ObjectSelector specifies how to select objects of a certain kind.
+type ObjectSelector struct {
+	// Kind is the kind of object to select.
+	Kind string `json:"kind"`
+	// LabelSelector is the label selector to select objects of the specified Kind by.
+	metav1.LabelSelector `json:",inline"`
 }

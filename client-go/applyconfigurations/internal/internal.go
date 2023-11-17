@@ -151,6 +151,19 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.onmetal.onmetal-api-net.apimachinery.api.net.IP
       default: {}
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.IPBlock
+  map:
+    fields:
+    - name: cidr
+      type:
+        namedType: com.github.onmetal.onmetal-api-net.apimachinery.api.net.IPPrefix
+      default: {}
+    - name: except
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.apimachinery.api.net.IPPrefix
+          elementRelationship: atomic
 - name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.IPClaimRef
   map:
     fields:
@@ -786,6 +799,172 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: state
       type:
         scalar: string
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicy
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicySpec
+      default: {}
+    - name: status
+      type:
+        namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyStatus
+      default: {}
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyCondition
+  map:
+    fields:
+    - name: lastTransitionTime
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
+      default: {}
+    - name: message
+      type:
+        scalar: string
+      default: ""
+    - name: observedGeneration
+      type:
+        scalar: numeric
+    - name: reason
+      type:
+        scalar: string
+      default: ""
+    - name: status
+      type:
+        scalar: string
+      default: ""
+    - name: type
+      type:
+        scalar: string
+      default: ""
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyEgressRule
+  map:
+    fields:
+    - name: ports
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPort
+          elementRelationship: atomic
+    - name: to
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPeer
+          elementRelationship: atomic
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyIngressRule
+  map:
+    fields:
+    - name: from
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPeer
+          elementRelationship: atomic
+    - name: ports
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPort
+          elementRelationship: atomic
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPeer
+  map:
+    fields:
+    - name: ipBlock
+      type:
+        namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.IPBlock
+    - name: objectSelector
+      type:
+        namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.ObjectSelector
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyPort
+  map:
+    fields:
+    - name: endPort
+      type:
+        scalar: numeric
+    - name: port
+      type:
+        scalar: numeric
+    - name: protocol
+      type:
+        scalar: string
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicySpec
+  map:
+    fields:
+    - name: egress
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyEgressRule
+          elementRelationship: atomic
+    - name: ingress
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyIngressRule
+          elementRelationship: atomic
+    - name: networkRef
+      type:
+        namedType: io.k8s.api.core.v1.LocalObjectReference
+      default: {}
+    - name: policyTypes
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: atomic
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyStatus
+  map:
+    fields:
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyCondition
+          elementRelationship: atomic
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyTarget
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: networkInterfaceRef
+      type:
+        namedType: io.k8s.api.core.v1.LocalObjectReference
+      default: {}
+    - name: uid
+      type:
+        scalar: string
+      default: ""
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyTargets
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: targets
+      type:
+        list:
+          elementType:
+            namedType: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkPolicyTarget
+          elementRelationship: atomic
 - name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.NetworkSpec
   map:
     fields:
@@ -896,6 +1075,24 @@ var schemaYAML = typed.YAMLObject(`types:
         elementType:
           namedType: __untyped_deduced_
         elementRelationship: separable
+- name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.ObjectSelector
+  map:
+    fields:
+    - name: kind
+      type:
+        scalar: string
+      default: ""
+    - name: matchExpressions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelectorRequirement
+          elementRelationship: atomic
+    - name: matchLabels
+      type:
+        map:
+          elementType:
+            scalar: string
 - name: com.github.onmetal.onmetal-api-net.api.core.v1alpha1.PCIAddress
   map:
     fields:

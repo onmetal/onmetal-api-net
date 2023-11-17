@@ -39,6 +39,8 @@ type CoreV1alpha1Interface interface {
 	NetworksGetter
 	NetworkIDsGetter
 	NetworkInterfacesGetter
+	NetworkPoliciesGetter
+	NetworkPolicyTargetsesGetter
 	NodesGetter
 }
 
@@ -93,6 +95,14 @@ func (c *CoreV1alpha1Client) NetworkIDs() NetworkIDInterface {
 
 func (c *CoreV1alpha1Client) NetworkInterfaces(namespace string) NetworkInterfaceInterface {
 	return newNetworkInterfaces(c, namespace)
+}
+
+func (c *CoreV1alpha1Client) NetworkPolicies(namespace string) NetworkPolicyInterface {
+	return newNetworkPolicies(c, namespace)
+}
+
+func (c *CoreV1alpha1Client) NetworkPolicyTargetses(namespace string) NetworkPolicyTargetsInterface {
+	return newNetworkPolicyTargetses(c, namespace)
 }
 
 func (c *CoreV1alpha1Client) Nodes() NodeInterface {

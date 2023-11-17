@@ -234,6 +234,37 @@ func (r *NetworkInterfaceReconciler) getNATIPsForNetworkInterfaceNAT(
 	return nil, nil
 }
 
+func (r *NetworkInterfaceReconciler) getFirewallRulesForNetworkInterface(
+	ctx context.Context,
+	nic *v1alpha1.NetworkInterface,
+) ([]metalnetv1alpha1.FirewallRuleSpec, error) {
+	var firewallRules []metalnetv1alpha1.FirewallRuleSpec
+
+	networkPolicyTargets := &v1alpha1.NetworkPolicyTargets{}
+	networkPolicyTargetKey := client.ObjectKey{Namespace: nic.Namespace, Name: nic.Name}
+	if err := r.Get(ctx, networkPolicyTargetKey, networkPolicyTargets); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	for target := range networkPolicyTargets.Targets {
+		firewallRule := metalnetv1alpha1.FirewallRuleSpec{
+			FirewallRuleID:    "",
+			Direction:         "",
+			Action:            "",
+			Priority:          nil,
+			IpFamily:          "",
+			SourcePrefix:      nil,
+			DestinationPrefix: nil,
+			ProtocolMatch:     nil,
+		}
+	}
+
+	return firewallRules, nil
+}
+
 func (r *NetworkInterfaceReconciler) updateStatus(
 	ctx context.Context,
 	nic *v1alpha1.NetworkInterface,
@@ -362,6 +393,9 @@ func (r *NetworkInterfaceReconciler) applyMetalnetNic(ctx context.Context, log l
 		return nil, false, fmt.Errorf("error getting NAT IPs: %w", err)
 	}
 
+	log.V(1).Info("Getting firewall rules")
+	firewallRules, err := r.getFirewallRulesForNetworkInterface(ctx, nic)
+
 	metalnetNic := &metalnetv1alpha1.NetworkInterface{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: metalnetv1alpha1.GroupVersion.String(),
@@ -381,6 +415,7 @@ func (r *NetworkInterfaceReconciler) applyMetalnetNic(ctx context.Context, log l
 			LoadBalancerTargets: ipsToMetalnetIPPrefixes(targets),
 			NAT:                 workaroundMetalnetNoIPv6NATDetailsToNATDetailsPointer(natIPs),
 			NodeName:            &metalnetNodeName,
+			FirewallRules:       firewallRules,
 		},
 	}
 	log.V(1).Info("Applying metalnet network interface")

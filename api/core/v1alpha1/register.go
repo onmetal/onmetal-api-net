@@ -68,6 +68,10 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&NetworkInterfaceList{},
 		&Node{},
 		&NodeList{},
+		&NetworkPolicy{},
+		&NetworkPolicyList{},
+		&NetworkPolicyTargets{},
+		&NetworkPolicyTargetsList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

@@ -41,4 +41,8 @@ type NetworkIDExpansion interface{}
 
 type NetworkInterfaceExpansion interface{}
 
+type NetworkPolicyExpansion interface{}
+
+type NetworkPolicyTargetsExpansion interface{}
+
 type NodeExpansion interface{}
