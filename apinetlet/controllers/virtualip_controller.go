@@ -21,8 +21,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/onmetal/controller-utils/clientutils"
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
-	apinetletv1alpha1 "github.com/onmetal/onmetal-api-net/apinetlet/api/v1alpha1"
 	commonv1alpha1 "github.com/onmetal/onmetal-api/api/common/v1alpha1"
 	networkingv1alpha1 "github.com/onmetal/onmetal-api/api/networking/v1alpha1"
 	"github.com/onmetal/onmetal-api/utils/predicates"
@@ -35,6 +33,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	apinetletv1alpha1 "github.com/onmetal/onmetal-api-net/apinetlet/api/v1alpha1"
 )
 
 const (
@@ -234,9 +235,9 @@ func (r *VirtualIPReconciler) SetupWithManager(mgr ctrl.Manager, apiNetCluster c
 				predicates.ResourceIsNotExternallyManaged(log),
 			),
 		).
-		Watches(
-			source.NewKindWithCache(&onmetalapinetv1alpha1.PublicIP{}, apiNetCluster.GetCache()),
-			handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []ctrl.Request {
+		WatchesRawSource(
+			source.Kind(apiNetCluster.GetCache(), &onmetalapinetv1alpha1.PublicIP{}),
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
 				apiNetPublicIP := obj.(*onmetalapinetv1alpha1.PublicIP)
 
 				if apiNetPublicIP.Namespace != r.APINetNamespace {

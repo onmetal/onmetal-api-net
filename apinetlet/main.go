@@ -22,14 +22,17 @@ import (
 	"fmt"
 	"os"
 
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
-	apinetletconfig "github.com/onmetal/onmetal-api-net/apinetlet/client/config"
-	"github.com/onmetal/onmetal-api-net/apinetlet/controllers"
 	commonv1alpha1 "github.com/onmetal/onmetal-api/api/common/v1alpha1"
 	networkingv1alpha1 "github.com/onmetal/onmetal-api/api/networking/v1alpha1"
 	"github.com/onmetal/onmetal-api/utils/client/config"
 	flag "github.com/spf13/pflag"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	apinetletconfig "github.com/onmetal/onmetal-api-net/apinetlet/client/config"
+	"github.com/onmetal/onmetal-api-net/apinetlet/controllers"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -125,12 +128,15 @@ func main() {
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "fa89daf5.apinetlet.apinet.api.onmetal.de",
-		Namespace:              watchNamespace,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				watchNamespace: {},
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -147,7 +153,11 @@ func main() {
 
 	apiNetCluster, err := cluster.New(apiNetCfg, func(options *cluster.Options) {
 		options.Scheme = scheme
-		options.Namespace = apiNetNamespace
+		options.Cache = cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				apiNetNamespace: {},
+			},
+		}
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create api net cluster")

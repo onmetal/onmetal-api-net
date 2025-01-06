@@ -18,13 +18,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	utilcertificate "github.com/onmetal/onmetal-api/utils/certificate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 )
 
 var _ = Describe("CertificateApprovalController", func() {

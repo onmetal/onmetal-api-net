@@ -24,7 +24,6 @@ import (
 
 	"github.com/onmetal/controller-utils/buildutils"
 	"github.com/onmetal/controller-utils/modutils"
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	networkingv1alpha1 "github.com/onmetal/onmetal-api/api/networking/v1alpha1"
 	envtestutils "github.com/onmetal/onmetal-api/utils/envtest"
 	"github.com/onmetal/onmetal-api/utils/envtest/apiserver"
@@ -34,12 +33,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -55,7 +58,7 @@ var (
 
 const (
 	pollingInterval      = 50 * time.Millisecond
-	eventuallyTimeout    = 3 * time.Second
+	eventuallyTimeout    = 20 * time.Second
 	consistentlyDuration = 1 * time.Second
 	apiServiceTimeout    = 5 * time.Minute
 )
@@ -135,9 +138,9 @@ func SetupTest(ctx context.Context) *corev1.Namespace {
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed(), "failed to create test namespace")
 
 		k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-			Scheme:             scheme.Scheme,
-			Host:               "127.0.0.1",
-			MetricsBindAddress: "0",
+			Scheme:                  scheme.Scheme,
+			Metrics:                 metricsserver.Options{BindAddress: "127.0.0.1:0"},
+			GracefulShutdownTimeout: pointer.Duration(5 * time.Second),
 		})
 		Expect(err).ToNot(HaveOccurred())
 

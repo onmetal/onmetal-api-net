@@ -18,11 +18,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/onmetal/controller-utils/clientutils"
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
-	apinetletv1alpha1 "github.com/onmetal/onmetal-api-net/apinetlet/api/v1alpha1"
 	networkingv1alpha1 "github.com/onmetal/onmetal-api/api/networking/v1alpha1"
 	"github.com/onmetal/onmetal-api/utils/predicates"
 	corev1 "k8s.io/api/core/v1"
@@ -34,11 +33,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	apinetletv1alpha1 "github.com/onmetal/onmetal-api-net/apinetlet/api/v1alpha1"
 )
 
 const (
@@ -102,12 +103,16 @@ func (r *NetworkReconciler) reconcileExists(ctx context.Context, log logr.Logger
 func (r *NetworkReconciler) delete(ctx context.Context, log logr.Logger, network *networkingv1alpha1.Network) (ctrl.Result, error) {
 	log.V(1).Info("Delete")
 
-	if !controllerutil.ContainsFinalizer(network, networkFinalizer) {
-		log.V(1).Info("No finalizer present, nothing to do")
-		return ctrl.Result{}, nil
+	// Get the list of finalizers
+	finalizers := network.GetFinalizers()
+
+	// Check if the only finalizer left is `networkFinalizer`
+	if len(finalizers) != 1 || finalizers[0] != networkFinalizer {
+		log.V(1).Info("Deletion deferred, requeueing in 5 seconds since other finalizers exist or no finalizer is present")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	log.V(1).Info("Deleting target apinet network if any")
+	log.V(1).Info("Only the network finalizer is present, proceeding with deletion")
 	if err := r.APINetClient.Delete(ctx, &onmetalapinetv1alpha1.Network{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.APINetNamespace,
@@ -117,17 +122,14 @@ func (r *NetworkReconciler) delete(ctx context.Context, log logr.Logger, network
 		if !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("error deleting target apinet network: %w", err)
 		}
-
-		log.V(1).Info("Target apinet network is gone, removing finalizer")
-		if err := clientutils.PatchRemoveFinalizer(ctx, r.Client, network, networkFinalizer); err != nil {
-			return ctrl.Result{}, fmt.Errorf("error removing finalizer: %w", err)
-		}
-		log.V(1).Info("Removed finalizer")
-		return ctrl.Result{}, nil
 	}
 
-	log.V(1).Info("Target apinet network is not yet gone, requeueing")
-	return ctrl.Result{Requeue: true}, nil
+	log.V(1).Info("Target apinet network is gone, removing finalizer")
+	if err := clientutils.PatchRemoveFinalizer(ctx, r.Client, network, networkFinalizer); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error removing finalizer: %w", err)
+	}
+	log.V(1).Info("Removed finalizer")
+	return ctrl.Result{}, nil
 }
 
 func (r *NetworkReconciler) updateNetworkStatus(ctx context.Context, network *networkingv1alpha1.Network, state networkingv1alpha1.NetworkState) error {
@@ -292,9 +294,9 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager, apiNetCluster clu
 				predicates.ResourceIsNotExternallyManaged(log),
 			),
 		).
-		Watches(
-			source.NewKindWithCache(&onmetalapinetv1alpha1.Network{}, apiNetCluster.GetCache()),
-			handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []ctrl.Request {
+		WatchesRawSource(
+			source.Kind(apiNetCluster.GetCache(), &onmetalapinetv1alpha1.Network{}),
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
 				apiNetNetwork := obj.(*onmetalapinetv1alpha1.Network)
 
 				if apiNetNetwork.Namespace != r.APINetNamespace {

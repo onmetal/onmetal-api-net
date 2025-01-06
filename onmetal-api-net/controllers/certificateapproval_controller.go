@@ -18,12 +18,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/generic"
 	authv1 "k8s.io/api/authorization/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/generic"
 )
 
 type CertificateApprovalReconciler struct {

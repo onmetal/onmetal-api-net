@@ -22,11 +22,12 @@ import (
 	"os"
 
 	"github.com/onmetal/controller-utils/configutils"
+	flag "github.com/spf13/pflag"
+
 	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	netflag "github.com/onmetal/onmetal-api-net/flag"
 	"github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers"
 	onmetalapinet "github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/onmetal-api-net"
-	flag "github.com/spf13/pflag"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -38,6 +39,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -91,8 +93,7 @@ func main() {
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "ff142330.apinet.api.onmetal.de",

@@ -15,9 +15,10 @@
 package controllers
 
 import (
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
 )
 
 func getApiNetPublicIPAllocationChangedPredicate() predicate.Funcs {

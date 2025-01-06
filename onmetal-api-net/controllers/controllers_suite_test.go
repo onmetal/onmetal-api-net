@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
-	onmetalapinet "github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/onmetal-api-net"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go4.org/netipx"
@@ -33,11 +31,16 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	onmetalapinetv1alpha1 "github.com/onmetal/onmetal-api-net/api/v1alpha1"
+	onmetalapinet "github.com/onmetal/onmetal-api-net/onmetal-api-net/controllers/certificate/onmetal-api-net"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -50,8 +53,8 @@ var testEnv *envtest.Environment
 
 const (
 	pollingInterval      = 50 * time.Millisecond
-	eventuallyTimeout    = 3 * time.Second
-	consistentlyDuration = 1 * time.Second
+	eventuallyTimeout    = 20 * time.Second
+	consistentlyDuration = 10 * time.Second
 )
 
 func TestControllers(t *testing.T) {
@@ -108,9 +111,9 @@ var _ = BeforeSuite(func() {
 	SetClient(k8sClient)
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:             scheme.Scheme,
-		Host:               "127.0.0.1",
-		MetricsBindAddress: "0",
+		Scheme:                  scheme.Scheme,
+		Metrics:                 metricsserver.Options{BindAddress: "127.0.0.1:0"},
+		GracefulShutdownTimeout: pointer.Duration(0),
 	})
 	Expect(err).ToNot(HaveOccurred())
 

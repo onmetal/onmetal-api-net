@@ -107,22 +107,22 @@ run-apinetlet: manifests generate fmt lint ## Run apinetlet from your host.
 
 .PHONY: docker-build-onmetal-api-net
 docker-build-onmetal-api-net: ## Build onmetal-api-net image with the manager.
-	docker build $(BUILDARGS) --target onmetal-api-net-manager -t ${ONMETAL_API_NET_IMG} .
+	podman build $(BUILDARGS) --target onmetal-api-net-manager -t ${ONMETAL_API_NET_IMG} .
 
 .PHONY: docker-build-apinetlet
 docker-build-apinetlet: ## Build apinetlet image with the manager.
-	docker build $(BUILDARGS) --target apinetlet-manager -t ${APINETLET_IMG} .
+	podman build $(BUILDARGS) --target apinetlet-manager -t ${APINETLET_IMG} .
 
 .PHONY: docker-build
 docker-build: docker-build-onmetal-api-net docker-build-apinetlet
 
 .PHONY: docker-push-onmetal-api-net
 docker-push-onmetal-api-net: ## Push onmetal-api-net image.
-	docker push ${ONMETAL_API_NET_IMG}
+	podman push ${ONMETAL_API_NET_IMG}
 
 .PHONY: docker-push-apinetlet
 docker-push-apinetlet: ## Push apinetlet image.
-	docker push ${APINETLET_IMG}
+	podman push ${APINETLET_IMG}
 
 .PHONY: docker-push
 docker-push: docker-push-onmetal-api-net docker-build-apinetlet ## Push onmetal-api-net and apinetlet image.
@@ -249,7 +249,7 @@ GOIMPORTS ?= $(LOCALBIN)/goimports
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.0.0
-CONTROLLER_TOOLS_VERSION ?= v0.11.3
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ADDLICENSE_VERSION ?= v1.1.0
 GOIMPORTS_VERSION ?= v0.5.0
 
